@@ -7,7 +7,10 @@ authors = [
     { name = "Timmythaw", email = "timmythaw17@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "rich>=14.2.0",
+    "typer>=0.19.2",
+]
 
 [project.scripts]
 repoai-ai = "repoai_ai:main"
