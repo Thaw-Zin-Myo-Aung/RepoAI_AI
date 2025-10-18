@@ -3,7 +3,8 @@ repos:
   rev: v0.6.9
   hooks:
     - id: ruff
-      args: ["--fix", "src", "tests"]  # lint only; no formatting hook
+      args: ["--fix", "src", "tests"]
+      files: "^(src|tests)/" 
 
 - repo: https://github.com/psf/black
   rev: 24.10.0
