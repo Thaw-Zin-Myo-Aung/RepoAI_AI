@@ -33,18 +33,32 @@ The main agents in the pipeline are:
 ## 🧩 Model Routing (AIML API)
 
 RepoAI dynamically selects models per agent role through a **Model Router**.  
-This enables flexibility and fallback options when switching between AIML models.
+Each role has ordered fallbacks that can be overridden through environment variables.
 
-| Role | Example AIML Models | Purpose |
-|------|----------------------|----------|
-| **INTAKE** | DeepSeek V3.1 → Qwen Max → Qwen Turbo | Chat understanding and task parsing |
-| **PLANNER** | DeepSeek Reasoner V3.1 → Qwen QwQ-32B → Qwen Max | Reasoning and structured plan generation |
-| **CODER** | Qwen 2.5 72B Instruct Turbo → Qwen 2.5 7B Instruct Turbo → DeepSeek V3.2 Exp Non-thinking | Code transformation and synthesis |
-| **PR_NARRATOR** | DeepSeek V3 → Qwen Max → Qwen Turbo | PR summarization and explanation |
-| **EMBEDDING** | bge-small (local) | Context retrieval for RAG |
+| Role | Default AIML Models (Primary → Fallbacks) | Purpose |
+|------|-------------------------------------------|----------|
+| **INTAKE** | `deepseek/deepseek-chat-v3.1` → `alibaba/qwen-max` → `claude-sonnet-4-5-20250929` | Fast reasoning for parsing user prompts |
+| **PLANNER** | `deepseek/deepseek-reasoner-v3.1` → `alibaba/qwen3-next-80b-a3b-thinking` → `claude-opus-4-20250514` | Deep reasoning & JSON plan generation |
+| **PR_NARRATOR** | `deepseek/deepseek-chat-v3.1` → `claude-haiku-4-5-20251001` → `alibaba/qwen3-235b-a22b-thinking-2507` | PR summarization and rationale |
+| **CODER** | `alibaba/qwen3-coder-480b-a35b-instruct` → `Qwen/Qwen2.5-Coder-32B-Instruct` → `deepseek/deepseek-chat-v3.1` → `claude-opus-4-1-20250805` | Code refactoring and completions |
+| **EMBEDDING** | `bge-small` | Lightweight RAG embeddings |
 
-All routes are defined in environment variables, e.g.:
+---
+
+### ⚙️ Configurable via Environment Variables
+
+You can override any defaults in `.env` using comma-separated lists.  
+The router will use them in the order given (first = primary).
 
 ```bash
-MODEL_ROUTE_PLANNER="deepseek-reasoner-v3.1,qwq-32b,qwen-max"
-MODEL_ROUTE_CODER="qwen2.5-72b-instruct-turbo,qwen2.5-7b-instruct-turbo,deepseek-v3.2-exp-non-thinking"
+AIMLAPI_BASE_URL=https://api.aimlapi.com/v1
+AIMLAPI_KEY=your_api_key_here
+
+MODEL_ROUTE_INTAKE="deepseek/deepseek-chat-v3.1,alibaba/qwen-max,claude-sonnet-4-5-20250929"
+MODEL_ROUTE_PLANNER="deepseek/deepseek-reasoner-v3.1,alibaba/qwen3-next-80b-a3b-thinking,claude-opus-4-20250514"
+MODEL_ROUTE_PR="deepseek/deepseek-chat-v3.1,claude-haiku-4-5-20251001,alibaba/qwen3-235b-a22b-thinking-2507"
+MODEL_ROUTE_CODER="alibaba/qwen3-coder-480b-a35b-instruct,Qwen/Qwen2.5-Coder-32B-Instruct,deepseek/deepseek-chat-v3.1,claude-opus-4-1-20250805"
+EMBEDDING_MODEL="bge-small"
+
+AIML_DEFAULT_TIMEOUT_S=45
+AIML_MAX_RETRIES=2
