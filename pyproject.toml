@@ -44,3 +44,4 @@ lint.ignore = ["E501", "E402"]
 python_version = "3.10"
 strict = true
 warn_unused_ignores = true
+ignore_missing_imports = true

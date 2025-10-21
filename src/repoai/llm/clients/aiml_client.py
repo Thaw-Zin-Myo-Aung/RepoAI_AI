@@ -3,11 +3,23 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    "Read an integer from environment safely with a fallback default."
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(f"Invalid integer for {name}: {raw}, using default {default}")
+        return default
 
 
 class AIMLClient:
@@ -28,11 +40,18 @@ class AIMLClient:
         api_key: str | None = None,
         timeout_s: int | None = None,
         max_retries: int | None = None,
-    ):
-        self.base_url = base_url or os.getenv("AIMLAPI_BASE_URL", "https://api.aimlapi.com/v1")
-        self.api_key = api_key or os.getenv("AIMLAPI_API_KEY", "")
-        self.timeout_s = int(timeout_s or os.getenv("AIML_DEFAULT_TIMEOUT_S", 45))
-        self.max_retries = int(max_retries or os.getenv("AIML_MAX_RETRIES", 2))
+    ) -> None:
+        self.base_url: str = (
+            base_url if base_url is not None else os.getenv("AIMLAPI_BASE_URL")
+        ) or "https://api.aimlapi.com/v1"
+
+        self.api_key: str = (api_key if api_key is not None else os.getenv("AIMLAPI_KEY")) or ""
+        self.timeout_s: int = (
+            timeout_s if timeout_s is not None else _env_int("AIML_DEFAULT_TIMEOUT_S", 45)
+        )
+        self.max_retries: int = (
+            max_retries if max_retries is not None else _env_int("AIML_MAX_RETRIES", 2)
+        )
 
         if not self.api_key:
             logger.warning("AIMLAPI_KEY is not set - requests will fail without authentication.")
@@ -47,17 +66,18 @@ class AIMLClient:
         self,
         model_id: str,
         messages: list[dict[str, str]],
+        *,
         temperature: float = 0.3,
         max_output_tokens: int = 1024,
         json_mode: bool = False,
-        **extra,
+        **extra: Any,
     ) -> dict[str, Any]:
         """
         Send Chat completion request.
         Returns parsed JSON response (Same As OpenAI style).
         """
         url = f"{self.base_url}/chat/completions"
-        payload = {
+        payload: dict[str, Any] = {
             "model": model_id,
             "messages": messages,
             "temperature": temperature,
@@ -69,17 +89,19 @@ class AIMLClient:
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
+        last_exception: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
                 with httpx.Client(timeout=self.timeout_s) as client:
                     response = client.post(url, headers=self._headers(), json=payload)
                 response.raise_for_status()
-                data = response.json()
+                data = cast(dict[str, Any], response.json())
                 logger.debug(
-                    f"AIML response OK (model={model_id}), tokens = {data.get("usage", {})}"
+                    f"AIML response OK (model={model_id}), tokens = {data.get('usage', {})}"
                 )
                 return data
             except Exception as e:
+                last_exception = e
                 if attempt >= self.max_retries:
                     logger.error(f"AIML request failed after {attempt + 1} tries {e}")
                     raise
@@ -87,4 +109,6 @@ class AIMLClient:
                 logger.warning(f"AIML request error {e}, retrying in {wait:.1f}s...")
                 time.sleep(wait)
 
-        return {}
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("AIML request failed for unknown reasons.")
