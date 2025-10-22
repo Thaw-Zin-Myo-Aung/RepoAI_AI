@@ -45,7 +45,7 @@ class AIMLClient:
             base_url if base_url is not None else os.getenv("AIMLAPI_BASE_URL")
         ) or "https://api.aimlapi.com/v1"
 
-        self.api_key: str = (api_key if api_key is not None else os.getenv("AIMLAPI_KEY")) or ""
+        self.api_key: str = (api_key if api_key is not None else os.getenv("AIMLAPI_API_KEY")) or ""
         self.timeout_s: int = (
             timeout_s if timeout_s is not None else _env_int("AIML_DEFAULT_TIMEOUT_S", 45)
         )
@@ -54,7 +54,9 @@ class AIMLClient:
         )
 
         if not self.api_key:
-            logger.warning("AIMLAPI_KEY is not set - requests will fail without authentication.")
+            logger.warning(
+                "AIMLAPI_API_KEY is not set - requests will fail without authentication."
+            )
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -94,6 +96,8 @@ class AIMLClient:
             try:
                 with httpx.Client(timeout=self.timeout_s) as client:
                     response = client.post(url, headers=self._headers(), json=payload)
+                if response.status_code != 200:
+                    logger.error(f"AIML API error {response.status_code}: {response.text}")
                 response.raise_for_status()
                 data = cast(dict[str, Any], response.json())
                 logger.debug(
