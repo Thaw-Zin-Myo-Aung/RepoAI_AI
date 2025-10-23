@@ -473,6 +473,12 @@ wheels = [
 ]
 
 [[package]]
+name = "display"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/ee/0597a1a76c04e38caa67e5676be0ff116e5b4e8d52c3b323988448a058b3/display-1.0.0.tar.gz", hash = "sha256:899b28eb6b2e9609b04c2961d1af8b2695b04eb48c24b40cc73bf1bd4d59d4bc", size = 687, upload-time = "2013-11-20T17:52:12.256Z" }
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2146,6 +2152,8 @@ name = "repoai-ai"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "display" },
+    { name = "ipython" },
     { name = "pydantic-ai" },
     { name = "rich" },
     { name = "typer" },
@@ -2163,6 +2171,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "display", specifier = ">=1.0.0" },
+    { name = "ipython", specifier = ">=9.6.0" },
     { name = "pydantic-ai", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "typer", specifier = ">=0.19.2" },
