@@ -45,6 +45,19 @@ class PydanticAIAdapter:
             return Agent(model, deps_type=None, output_type=schema)  # type: ignore
         return Agent(model)
 
+    def _agents_with_fallback(
+        self, role: ModelRole, schema: type[BaseModel] | None = None
+    ) -> list[Agent]:
+        """Create agents for all models configured for the role, in priority order."""
+        agents = []
+        for client in self.router.clients(role):
+            model = OpenAIChatModel(client.model_id, provider=AIML_PROVIDER, profile=AIML_PROFILE)
+            if schema:
+                agents.append(Agent(model, deps_type=None, output_type=schema))  # type: ignore
+            else:
+                agents.append(Agent(model))
+        return agents
+
     # -------------------------------
     # Structured Completions
     # -------------------------------
@@ -56,16 +69,46 @@ class PydanticAIAdapter:
         *,
         temperature: float = 0.3,
         max_output_tokens: int = 2048,
+        use_fallback: bool = True,
     ) -> T:
         prompt = "\n".join(msg["content"] for msg in messages)
-        agent = self._agent(role, schema)
 
-        logger.info(f"Running async JSON completion with model: {agent.model}, role: {role.name}")
-        result = await agent.run(
-            prompt, model_settings={"temperature": temperature, "max_tokens": max_output_tokens}
-        )
-        # result.output contains the validated Pydantic model instance when output_type is set
-        return result.output  # type: ignore[return-value]
+        if not use_fallback:
+            # Simple: use primary model only
+            agent = self._agent(role, schema)
+            logger.info(
+                f"Running async JSON completion with model: {agent.model}, role: {role.name}"
+            )
+            result = await agent.run(
+                prompt, model_settings={"temperature": temperature, "max_tokens": max_output_tokens}
+            )
+            return result.output  # type: ignore[return-value]
+
+        # Fallback: try each model in order until one succeeds
+        agents = self._agents_with_fallback(role, schema)
+        last_exception: Exception | None = None
+
+        for i, agent in enumerate(agents):
+            try:
+                logger.info(
+                    f"Attempting JSON completion with model {i+1}/{len(agents)}: {agent.model}, role: {role.name}"
+                )
+                result = await agent.run(
+                    prompt,
+                    model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
+                )
+                return result.output  # type: ignore[return-value]
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Model {agent.model} failed: {e}")
+                if i < len(agents) - 1:
+                    logger.info("Trying fallback model...")
+                continue
+
+        # All models failed
+        if last_exception:
+            raise last_exception
+        raise RuntimeError(f"No models available for role: {role}")
 
     # -------------------------------
     # Unstructured Completions
@@ -77,15 +120,46 @@ class PydanticAIAdapter:
         *,
         temperature: float = 0.3,
         max_output_tokens: int = 2048,
+        use_fallback: bool = True,
     ) -> str:
         prompt = "\n".join(msg["content"] for msg in messages)
-        agent = self._agent(role)
 
-        logger.info(f"Running async raw completion with model: {agent.model}, role: {role.name}")
-        result = await agent.run(
-            prompt, model_settings={"temperature": temperature, "max_tokens": max_output_tokens}
-        )
-        return result.output
+        if not use_fallback:
+            # Simple: use primary model only
+            agent = self._agent(role)
+            logger.info(
+                f"Running async raw completion with model: {agent.model}, role: {role.name}"
+            )
+            result = await agent.run(
+                prompt, model_settings={"temperature": temperature, "max_tokens": max_output_tokens}
+            )
+            return result.output
+
+        # Fallback: try each model in order until one succeeds
+        agents = self._agents_with_fallback(role)
+        last_exception: Exception | None = None
+
+        for i, agent in enumerate(agents):
+            try:
+                logger.info(
+                    f"Attempting raw completion with model {i+1}/{len(agents)}: {agent.model}, role: {role.name}"
+                )
+                result = await agent.run(
+                    prompt,
+                    model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
+                )
+                return result.output
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Model {agent.model} failed: {e}")
+                if i < len(agents) - 1:
+                    logger.info("Trying fallback model...")
+                continue
+
+        # All models failed
+        if last_exception:
+            raise last_exception
+        raise RuntimeError(f"No models available for role: {role}")
 
     # -------------------------------
     # Raw Streaming Completions
@@ -97,19 +171,67 @@ class PydanticAIAdapter:
         *,
         temperature: float = 0.3,
         max_output_tokens: int = 2048,
+        use_fallback: bool = True,
     ) -> AsyncIterator[str]:
-        prompt = "\n".join(msg["content"] for msg in messages)
-        agent = self._agent(role)
+        """
+        Stream unstructured text completion asynchronously.
 
-        logger.info(
-            f"Running async raw streaming completion with model: {agent.model}, role: {role.name}"
-        )
-        async with agent.run_stream(
-            prompt,
-            model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
-        ) as stream:
-            async for chunk in stream.stream_text(delta=True):
-                yield chunk
+        Yields text chunks as they arrive. If use_fallback is True (default),
+        will try each model in priority order until one successfully streams.
+
+        Args:
+            role: Model role for selection
+            messages: List of message dicts with "content" key
+            temperature: Sampling temperature
+            max_output_tokens: Maximum tokens in response
+            use_fallback: If True, retry with fallback models on failure
+
+        Yields:
+            str: Text chunks from the streaming response
+        """
+        prompt = "\n".join(msg["content"] for msg in messages)
+
+        if not use_fallback:
+            # Simple: use primary model only
+            agent = self._agent(role)
+            logger.info(
+                f"Running async raw streaming completion with model: {agent.model}, role: {role.name}"
+            )
+            async with agent.run_stream(
+                prompt,
+                model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
+            ) as stream:
+                async for chunk in stream.stream_text(delta=True):
+                    yield chunk
+            return
+
+        # Fallback: try each model in order until one succeeds
+        agents = self._agents_with_fallback(role)
+        last_exception: Exception | None = None
+
+        for i, agent in enumerate(agents):
+            try:
+                logger.info(
+                    f"Attempting streaming completion with model {i+1}/{len(agents)}: {agent.model}, role: {role.name}"
+                )
+                async with agent.run_stream(
+                    prompt,
+                    model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
+                ) as stream:
+                    async for chunk in stream.stream_text(delta=True):
+                        yield chunk
+                return  # Successfully streamed
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Model {agent.model} failed during streaming: {e}")
+                if i < len(agents) - 1:
+                    logger.info("Trying fallback model for streaming...")
+                continue
+
+        # All models failed
+        if last_exception:
+            raise last_exception
+        raise RuntimeError(f"No models available for streaming role: {role}")
 
     # -------------------------------
     # Sync Wrappers
