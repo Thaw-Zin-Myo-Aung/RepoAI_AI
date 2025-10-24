@@ -1,5 +1,5 @@
 [project]
-name = "repoai-ai"
+name = "repoai"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -16,11 +16,16 @@ dependencies = [
 ]
 
 [project.scripts]
-repoai-ai = "repoai_ai:main"
+repoai = "repoai.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.8.12,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
 
 [dependency-groups]
 dev = [
