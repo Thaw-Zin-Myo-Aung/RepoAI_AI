@@ -144,6 +144,24 @@ class PydanticAIAdapter:
         )
         return models
 
+    def get_model_ids_with_fallback(self, role: ModelRole) -> list[str]:
+        """
+        Get model IDs for a role in fallback order (primary + fallbacks).
+
+        Args:
+            role: Model role
+
+        Returns:
+            list[str]: List of model ID strings in priority order
+
+        Example:
+            model_ids = adapter.get_model_ids_with_fallback(ModelRole.INTAKE)
+            # Returns: ['deepseek/deepseek-chat-v3.1', 'alibaba/qwen-max', ...]
+        """
+        model_ids = [client.model_id for client in self.router.clients(role)]
+        logger.debug(f"Retrieved {len(model_ids)} model IDs for role {role.value}: {model_ids}")
+        return model_ids
+
     def get_model_settings(self, role: ModelRole) -> dict[str, float | int]:
         """
         Get default model settings (temperature, max_tokens) for a role.
@@ -197,15 +215,21 @@ class PydanticAIAdapter:
 
     def _agents_with_fallback(
         self, role: ModelRole, schema: type[BaseModel] | None = None
-    ) -> list[Agent]:
-        """Create agents for all models configured for the role, in priority order."""
+    ) -> list[tuple[Agent, str]]:
+        """
+        Create agents for all models configured for the role, in priority order.
+
+        Returns:
+            list of tuples: (Agent, model_id_string)
+        """
         agents = []
         for client in self.router.clients(role):
             model = OpenAIChatModel(client.model_id, provider=AIML_PROVIDER, profile=ALML_PROFILE)
             if schema:
-                agents.append(Agent(model, deps_type=None, output_type=schema))  # type: ignore
+                agent = Agent(model, deps_type=None, output_type=schema)  # type: ignore
             else:
-                agents.append(Agent(model))
+                agent = Agent(model)
+            agents.append((agent, client.model_id))
         return agents
 
     # ---------------------------------------------------------------
@@ -245,7 +269,8 @@ class PydanticAIAdapter:
 
         if not use_fallback:
             agent = self._agent(role, schema)
-            logger.info(f"Using primary model: {agent.model}")
+            spec = self.router.choose(role).spec
+            logger.info(f"Using primary model: {spec.model_id}")
 
             start_time = time.time()
             result = await agent.run(
@@ -254,7 +279,7 @@ class PydanticAIAdapter:
             duration = (time.time() - start_time) * 1000
             logger.info(
                 f"Completed JSON completion with primary model in {duration:.2f} ms."
-                f" Model: {agent.model}"
+                f" Model: {spec.model_id}"
             )
             return result.output  # type: ignore[return-value]
 
@@ -262,11 +287,11 @@ class PydanticAIAdapter:
         agents = self._agents_with_fallback(role, schema)
         last_exception: Exception | None = None
 
-        for i, agent in enumerate(agents):
+        for i, (agent, model_id) in enumerate(agents):
             try:
                 logger.info(
                     f"Attempting JSON completion {i+1}/{len(agents)}: "
-                    f"Model: {agent.model}, role: {role.value}"
+                    f"Model: {model_id}, role: {role.value}"
                 )
                 start_time = time.time()
                 result = await agent.run(
@@ -279,7 +304,7 @@ class PydanticAIAdapter:
 
             except Exception as e:
                 last_exception = e
-                logger.warning(f"Model {agent.model} failed (attempt {i+1}/{len(agents)}): {e}")
+                logger.warning(f"Model {model_id} failed (attempt {i+1}/{len(agents)}): {e}")
                 if i < len(agents) - 1:
                     logger.info("Trying fallback model...")
                 continue
@@ -319,7 +344,8 @@ class PydanticAIAdapter:
 
         if not use_fallback:
             agent = self._agent(role)
-            logger.info(f"Using primary model: {agent.model}")
+            spec = self.router.choose(role).spec
+            logger.info(f"Using primary model: {spec.model_id}")
 
             start_time = time.time()
             result = await agent.run(
@@ -336,9 +362,9 @@ class PydanticAIAdapter:
         agents = self._agents_with_fallback(role)
         last_exception: Exception | None = None
 
-        for i, agent in enumerate(agents):
+        for i, (agent, model_id) in enumerate(agents):
             try:
-                logger.info(f"Attempting raw completion {i+1}/{len(agents)}: model={agent.model}")
+                logger.info(f"Attempting raw completion {i+1}/{len(agents)}: model={model_id}")
 
                 start_time = time.time()
                 result = await agent.run(
@@ -355,7 +381,7 @@ class PydanticAIAdapter:
 
             except Exception as e:
                 last_exception = e
-                logger.warning(f"Model {agent.model} failed: {e}")
+                logger.warning(f"Model {model_id} failed: {e}")
                 if i < len(agents) - 1:
                     logger.info("Trying fallback model...")
                 continue
@@ -396,7 +422,8 @@ class PydanticAIAdapter:
 
         if not use_fallback:
             agent = self._agent(role)
-            logger.debug(f"Using primary model: {agent.model}")
+            spec = self.router.choose(role).spec
+            logger.debug(f"Using primary model: {spec.model_id}")
 
             async with agent.run_stream(
                 prompt,
@@ -412,9 +439,9 @@ class PydanticAIAdapter:
         agents = self._agents_with_fallback(role)
         last_exception: Exception | None = None
 
-        for i, agent in enumerate(agents):
+        for i, (agent, model_id) in enumerate(agents):
             try:
-                logger.info(f"Attempting streaming {i+1}/{len(agents)}: model={agent.model}")
+                logger.info(f"Attempting streaming {i+1}/{len(agents)}: model={model_id}")
 
                 async with agent.run_stream(
                     prompt,
@@ -428,7 +455,7 @@ class PydanticAIAdapter:
 
             except Exception as e:
                 last_exception = e
-                logger.warning(f"Streaming failed with model {agent.model}: {e}")
+                logger.warning(f"Streaming failed with model {model_id}: {e}")
                 if i < len(agents) - 1:
                     logger.info("Trying fallback model for streaming...")
                 continue
