@@ -3,7 +3,7 @@ Validation result models - output from Validator Agent.
 Represents quality checks and test results.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from repoai.explainability.confidence import ConfidenceMetrics
 from repoai.explainability.metadata import RefactorMetadata
@@ -54,8 +54,8 @@ class ValidationCheck(BaseModel):
         default_factory=dict, description="Additional details about the check results"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "check_name": "junit_tests",
                 "passed": True,
@@ -72,6 +72,7 @@ class ValidationCheck(BaseModel):
                 },
             }
         }
+    )
 
 
 class ValidationResult(BaseModel):
@@ -160,8 +161,8 @@ class ValidationResult(BaseModel):
             or self.static_analysis_violations.get("BLOCKER", 0) > 0
         )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "plan_id": "plan_20250115_103100",
                 "passed": True,
@@ -197,3 +198,4 @@ class ValidationResult(BaseModel):
                 },
             }
         }
+    )

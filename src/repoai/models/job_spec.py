@@ -5,7 +5,7 @@ Defines what refactoring work needs to be done.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from repoai.explainability.metadata import RefactorMetadata
 
@@ -46,8 +46,8 @@ class JobScope(BaseModel):
         description="Patterns to exclude (e.g., '**/*Test.java', 'node_modules/**', '**/target/**')",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "target_files": ["src/main/java/com/example/auth/**/*.java"],
                 "target_packages": ["com.example.auth", "com.example.security"],
@@ -57,6 +57,7 @@ class JobScope(BaseModel):
                 "exclude_patterns": ["**/*Test.java", "**/target/**", "**/generated/**"],
             }
         }
+    )
 
 
 class JobSpec(BaseModel):
@@ -104,12 +105,12 @@ class JobSpec(BaseModel):
         default_factory=datetime.now, description="Timestamp when the job spec was created"
     )
 
-    metadadata: RefactorMetadata | None = Field(
+    metadata: RefactorMetadata | None = Field(
         default=None, description="Metadata about how this job spec was created"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "job_id": "job_20250115_103045",
                 "intent": "add_jwt_authentication",
@@ -130,3 +131,4 @@ class JobSpec(BaseModel):
                 "created_at": "2025-01-15T10:30:45",
             }
         }
+    )

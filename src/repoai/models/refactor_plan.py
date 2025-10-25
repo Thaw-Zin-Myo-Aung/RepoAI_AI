@@ -3,7 +3,7 @@ Refactor plan models - output from Planner Agent.
 Defines how the refactoring will be executed step-by-step.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from repoai.explainability.metadata import RefactorMetadata
 
@@ -59,8 +59,8 @@ class RefactorStep(BaseModel):
         default=5, ge=1, description="Estimated time to complete this step (minutes)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "step_number": 1,
                 "action": "create_class",
@@ -72,6 +72,7 @@ class RefactorStep(BaseModel):
                 "estimated_time_mins": 15,
             }
         }
+    )
 
 
 class RiskAssessment(BaseModel):
@@ -114,8 +115,8 @@ class RiskAssessment(BaseModel):
         ge=0.0, le=1.0, default=0.8, description="Minimum test coverage required (0.0 to 1.0)"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "overall_risk_level": 5,
                 "breaking_changes": False,
@@ -133,6 +134,7 @@ class RiskAssessment(BaseModel):
                 "test_coverage_required": 0.85,
             }
         }
+    )
 
 
 class RefactorPlan(BaseModel):
@@ -178,8 +180,8 @@ class RefactorPlan(BaseModel):
         """Steps with risk level >= 7."""
         return [step for step in self.steps if step.risk_level >= 7]
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "plan_id": "plan_20250115_103100",
                 "job_id": "job_20250115_103045",
@@ -202,3 +204,4 @@ class RefactorPlan(BaseModel):
                 "estimated_duration": "45 minutes",
             }
         }
+    )

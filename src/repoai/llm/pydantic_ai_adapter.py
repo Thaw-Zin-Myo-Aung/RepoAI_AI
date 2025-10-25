@@ -6,7 +6,6 @@ Methods to get models and settings for custom agent creation.
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -15,10 +14,10 @@ from typing import TYPE_CHECKING, TypeVar
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.profiles import ModelProfile
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.settings import ModelSettings
 
+from repoai.config.settings import get_settings
 from repoai.utils.logger import get_logger
 
 from .model_registry import ModelSpec
@@ -30,16 +29,6 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 T = TypeVar("T", bound=BaseModel)
-
-# AIMLAPI via OpenAI-compatible provider
-AIML_PROVIDER = OpenAIProvider(
-    base_url=os.getenv("AIMLAPI_BASE_URL", "https://api.aimlapi.com/v1"),
-    api_key=os.getenv("AIMLAPI_API_KEY"),
-)
-
-# Profile for AIMLAPI - uses 'prompted' mode to avoid "strict" parameter which AIMLAPI doesn't support
-# This adds a prompt asking for JSON output instead of using OpenAI's native structured output with
-ALML_PROFILE = ModelProfile(default_structured_output_mode="prompted")
 
 
 @dataclass
@@ -98,16 +87,15 @@ class PydanticAIAdapter:
     # Model Retrieval for Custom Agent Creation
     # ---------------------------------------------------------------
 
-    def get_model(self, role: ModelRole) -> OpenAIChatModel:
+    def get_model(self, role: ModelRole) -> GoogleModel:
         """
-        Get Configured model for a role without creating an agent.
-        For Agent with custom configuration.
+        Get Configured Gemini model for a role without creating an agent.
 
         Args:
             role: Model role (INTAKE, PLANNER, CODER, etc.)
 
         Returns:
-            OpenAIChatModel: Configured model instance
+            GoogleModel: Configured Gemini model instance
 
         Example:
             model = adapter.get_model(ModelRole.INTAKE)
@@ -120,24 +108,32 @@ class PydanticAIAdapter:
         """
         spec = self.router.choose(role)
         logger.debug(f"Retrieved model for role {role.value}: {spec.model_id}")
-        return OpenAIChatModel(spec.model_id, provider=AIML_PROVIDER, profile=ALML_PROFILE)
 
-    def get_models_with_fallback(self, role: ModelRole) -> list[OpenAIChatModel]:
+        # Set GOOGLE_API_KEY in environment
+        import os
+
+        os.environ["GOOGLE_API_KEY"] = get_settings().GOOGLE_API_KEY
+        return GoogleModel(spec.model_id)
+
+    def get_models_with_fallback(self, role: ModelRole) -> list[GoogleModel]:
         """
-        Get all models for a role, in priority order.
+        Get all Gemini models for a role, in priority order.
         Useful for implementing manual fallback in agent creation.
 
         Args:
             role: Model role
 
         Returns:
-            list[OpenAIChatModel]: List of models in fallback order
+            list[GoogleModel]: List of Gemini models in fallback order
         """
-        models = []
+        import os
+
+        os.environ["GOOGLE_API_KEY"] = get_settings().GOOGLE_API_KEY
+
+        models: list[GoogleModel] = []
         for client in self.router.clients(role):
-            models.append(
-                OpenAIChatModel(client.model_id, provider=AIML_PROVIDER, profile=ALML_PROFILE)
-            )
+            models.append(GoogleModel(client.model_id))
+
         logger.debug(
             f"Retrieved {len(models)} models for role {role.value}."
             f"{[str(model) for model in models]}"
@@ -162,7 +158,7 @@ class PydanticAIAdapter:
         logger.debug(f"Retrieved {len(model_ids)} model IDs for role {role.value}: {model_ids}")
         return model_ids
 
-    def get_model_settings(self, role: ModelRole) -> dict[str, float | int]:
+    def get_model_settings(self, role: ModelRole) -> ModelSettings:
         """
         Get default model settings (temperature, max_tokens) for a role.
 
@@ -170,7 +166,7 @@ class PydanticAIAdapter:
             role: Model role
 
         Returns:
-            dict: Settings dictionary with 'temperature' and 'max_tokens'
+            ModelSettings: Settings TypedDict with 'temperature' and 'max_tokens'
 
         Example:
             settings = adapter.get_model_settings(ModelRole.CODER)
@@ -178,7 +174,7 @@ class PydanticAIAdapter:
         """
         client = self.router.choose(role)
         spec = client.spec
-        settings = {
+        settings: ModelSettings = {
             "temperature": spec.temperature,
             "max_tokens": spec.max_output_tokens,
         }
@@ -206,8 +202,12 @@ class PydanticAIAdapter:
     # ---------------------------------------------------------------
 
     def _agent(self, role: ModelRole, schema: type[BaseModel] | None = None) -> Agent:
+        import os
+
+        os.environ["GOOGLE_API_KEY"] = get_settings().GOOGLE_API_KEY
+
         spec = self.router.choose(role)
-        model = OpenAIChatModel(spec.model_id, provider=AIML_PROVIDER, profile=ALML_PROFILE)
+        model = GoogleModel(spec.model_id)
         # Create agent with or without structured output type
         if schema:
             return Agent(model, deps_type=None, output_type=schema)  # type: ignore
@@ -222,9 +222,13 @@ class PydanticAIAdapter:
         Returns:
             list of tuples: (Agent, model_id_string)
         """
+        import os
+
+        os.environ["GOOGLE_API_KEY"] = get_settings().GOOGLE_API_KEY
+
         agents = []
         for client in self.router.clients(role):
-            model = OpenAIChatModel(client.model_id, provider=AIML_PROVIDER, profile=ALML_PROFILE)
+            model = GoogleModel(client.model_id)
             if schema:
                 agent = Agent(model, deps_type=None, output_type=schema)  # type: ignore
             else:

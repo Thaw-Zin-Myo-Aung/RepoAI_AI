@@ -3,7 +3,7 @@ PR description models - output from PR Narrator Agent.
 Represents documentation for the refactoring changes.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from repoai.explainability.metadata import RefactorMetadata
 
@@ -100,8 +100,8 @@ class PRDescription(BaseModel):
 
         return "\n".join(lines)
 
-    class Config:
-        json_schema_extra: dict[str, object] = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "plan_id": "plan_20250115_103100",
                 "title": "feat: Add JWT authentication to user service",
@@ -115,3 +115,4 @@ class PRDescription(BaseModel):
                 "testing_notes": "All existing tests pass. Added 12 new unit tests for JWT functionality.",
             }
         }
+    )

@@ -33,55 +33,47 @@ def _split_csv(value: str | None) -> list[str]:
 
 
 def _infer_provider(model_id: str) -> str:
-    """Light heuristic to infer provider from model ID."""
-    m = model_id.lower()
-    if "deepseek" in m:
-        return "DeepSeek"
-    if "qwen" in m or "qwq" in m:
-        return "Qwen"
-    if "bge" in m or "minilm" in m:
-        return "Local Embedding"
-    return "AIMLAPI"
+    """Infer provider from model ID - always Gemini now."""
+    return "Gemini"
 
 
 def _default_models_for(role: ModelRole) -> list[str]:
-    """Default models to fallback when env is not set."""
+    """Default Gemini models to fallback when env is not set."""
     if role is ModelRole.INTAKE:
         # Fast reasoning for user prompts
         return [
-            "deepseek/deepseek-chat-v3.1",
-            "alibaba/qwen-max",
-            "claude-sonnet-4-5-20250929",
+            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash-002",
         ]
 
     if role is ModelRole.PLANNER:
-        # Reasoning and JSON output
+        # Reasoning and planning
         return [
-            "deepseek/deepseek-reasoner-v3.1",
-            "alibaba/qwen3-next-80b-a3b-thinking",
-            "claude-opus-4-20250514",
+            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-exp-1206",
+            "gemini-2.0-flash-exp",
         ]
 
     if role is ModelRole.PR_NARRATOR:
         # Natural Language Processing for PR summaries
         return [
-            "deepseek/deepseek-chat-v3.1",
-            "claude-haiku-4-5-20251001",
-            "alibaba/qwen3-235b-a22b-thinking-2507",
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash-002",
+            "gemini-2.0-flash-thinking-exp-01-21",
         ]
 
     if role is ModelRole.CODER:
-        # Code-focused LLM for refactoring and completions
+        # Code-focused models for refactoring and completions
         return [
-            "alibaba/qwen3-coder-480b-a35b-instruct",
-            "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "deepseek/deepseek-chat-v3.1",
-            "claude-opus-4-1-20250805",
+            "gemini-exp-1206",
+            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-2.0-flash-exp",
         ]
 
     if role is ModelRole.EMBEDDING:
-        # Small Embedding model for RAG
-        return ["bge-small"]
+        # Embedding model for RAG
+        return ["text-embedding-004"]
 
     return []
 

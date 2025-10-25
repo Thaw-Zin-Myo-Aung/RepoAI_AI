@@ -3,7 +3,7 @@ Code change models - output from Transformer Agent.
 Represents the actual code modifications made.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from repoai.explainability.metadata import RefactorMetadata
 
@@ -70,8 +70,8 @@ class CodeChange(BaseModel):
         description="Annotations added (e.g., '@Service', '@Autowired', '@RestController', '@Override')",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "file_path": "src/main/java/com/example/auth/JwtService.java",
                 "change_type": "created",
@@ -95,6 +95,7 @@ class CodeChange(BaseModel):
                 "annotations_added": ["@Service"],
             }
         }
+    )
 
 
 class CodeChanges(BaseModel):
@@ -172,8 +173,8 @@ class CodeChanges(BaseModel):
         """Total Java artifacts created (classes + interfaces + enums)."""
         return self.classes_created + self.interfaces_created + self.enums_created
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "plan_id": "plan_20250115_103100",
                 "changes": [],
@@ -194,3 +195,4 @@ class CodeChanges(BaseModel):
                 "plugins_added": [],
             }
         }
+    )
