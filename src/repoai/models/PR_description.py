@@ -101,7 +101,7 @@ class PRDescription(BaseModel):
         return "\n".join(lines)
 
     class Config:
-        json_schema_extra = {
+        json_schema_extra: dict[str, object] = {
             "example": {
                 "plan_id": "plan_20250115_103100",
                 "title": "feat: Add JWT authentication to user service",
