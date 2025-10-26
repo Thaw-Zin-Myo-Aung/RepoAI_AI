@@ -30,18 +30,18 @@ The main agents in the pipeline are:
 
 ---
 
-## 🧩 Model Routing (AIML API)
+## 🧩 Model Routing (Gemini)
 
 RepoAI dynamically selects models per agent role through a **Model Router**.  
 Each role has ordered fallbacks that can be overridden through environment variables.
 
 | Role | Default AIML Models (Primary → Fallbacks) | Purpose |
 |------|-------------------------------------------|----------|
-| **INTAKE** | `deepseek/deepseek-chat-v3.1` → `alibaba/qwen-max` → `claude-sonnet-4-5-20250929` | Fast reasoning for parsing user prompts |
-| **PLANNER** | `deepseek/deepseek-reasoner-v3.1` → `alibaba/qwen3-next-80b-a3b-thinking` → `claude-opus-4-20250514` | Deep reasoning & JSON plan generation |
-| **PR_NARRATOR** | `deepseek/deepseek-chat-v3.1` → `claude-haiku-4-5-20251001` → `alibaba/qwen3-235b-a22b-thinking-2507` | PR summarization and rationale |
-| **CODER** | `alibaba/qwen3-coder-480b-a35b-instruct` → `Qwen/Qwen2.5-Coder-32B-Instruct` → `deepseek/deepseek-chat-v3.1` → `claude-opus-4-1-20250805` | Code refactoring and completions |
-| **EMBEDDING** | `bge-small` | Lightweight RAG embeddings |
+| **INTAKE** | `gemini-2.0-flash-thinking-exp-01-21` → `gemini-2.0-flash-exp` → `gemini-1.5-flash-002` | Fast reasoning for parsing user prompts |
+| **PLANNER** | `gemini-2.0-flash-thinking-exp-01-21` → `gemini-exp-1206` → `gemini-2.5-pro-exp-03-04` | Deep reasoning & JSON plan generation |
+| **PR_NARRATOR** | `gemini-2.0-flash-exp` → `gemini-1.5-flash-002` → `gemini-2.0-flash-thinking-exp-01-21` | PR summarization and rationale |
+| **CODER** | `gemini-2.5-pro-exp-03-04` → `gemini-exp-1206` → `gemini-2.0-flash-thinking-exp-01-21` | Code refactoring and completions |
+| **EMBEDDING** | `text-embedding-004` | Lightweight RAG embeddings (Gemini) |
 
 ---
 
@@ -51,14 +51,13 @@ You can override any defaults in `.env` using comma-separated lists.
 The router will use them in the order given (first = primary).
 
 ```bash
-AIMLAPI_BASE_URL=https://api.aimlapi.com/v1
-AIMLAPI_KEY=your_api_key_here
+GOOGLE_API_KEY=your_API_key_here
 
-MODEL_ROUTE_INTAKE="deepseek/deepseek-chat-v3.1,alibaba/qwen-max,claude-sonnet-4-5-20250929"
-MODEL_ROUTE_PLANNER="deepseek/deepseek-reasoner-v3.1,alibaba/qwen3-next-80b-a3b-thinking,claude-opus-4-20250514"
-MODEL_ROUTE_PR="deepseek/deepseek-chat-v3.1,claude-haiku-4-5-20251001,alibaba/qwen3-235b-a22b-thinking-2507"
-MODEL_ROUTE_CODER="alibaba/qwen3-coder-480b-a35b-instruct,Qwen/Qwen2.5-Coder-32B-Instruct,deepseek/deepseek-chat-v3.1,claude-opus-4-1-20250805"
-EMBEDDING_MODEL="bge-small"
+MODEL_ROUTE_INTAKE="gemini-2.0-flash-thinking-exp-01-21,gemini-2.0-flash-exp,gemini-1.5-flash-002"
+MODEL_ROUTE_PLANNER="gemini-2.0-flash-thinking-exp-01-21,gemini-exp-1206,gemini-2.5-pro-exp-03-04"
+MODEL_ROUTE_CODER="gemini-2.5-pro-exp-03-04,gemini-exp-1206,gemini-2.0-flash-thinking-exp-01-21"
+MODEL_ROUTE_PR="gemini-2.0-flash-exp,gemini-1.5-flash-002,gemini-2.0-flash-thinking-exp-01-21"
+EMBEDDING_MODEL="text-embedding-004"
 
-AIML_DEFAULT_TIMEOUT_S=45
-AIML_MAX_RETRIES=2
+GEMINI_DEFAULT_TIMEOUT_S=60
+GEMINI_MAX_RETRIES=2
