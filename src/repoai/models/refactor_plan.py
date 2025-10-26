@@ -102,9 +102,9 @@ class RiskAssessment(BaseModel):
         description="Potential runtime exceptions to watch for (e.g., 'NullPointerException', 'ClassCastException')",
     )
 
-    framework_impacts: dict[str, bool] = Field(
-        default_factory=dict,
-        description="Whether changes affect specific frameworks (e.g., {'spring': True, 'hibernate': False})",
+    framework_impacts: list[str] = Field(
+        default_factory=list,
+        description="Frameworks affected by changes (e.g., ['spring', 'hibernate', 'junit'])",
     )
 
     mitigation_strategies: list[str] = Field(
@@ -124,7 +124,7 @@ class RiskAssessment(BaseModel):
                 "compilation_risk": True,
                 "dependency_conflicts": False,
                 "runtime_exceptions": ["NullPointerException", "IllegalArgumentException"],
-                "framework_impacts": {"spring": True, "hibernate": False},
+                "framework_impacts": ["spring", "spring-security"],
                 "mitigation_strategies": [
                     "Add comprehensive unit tests for all new methods",
                     "Ensure backward compatibility with @Deprecated annotations",
