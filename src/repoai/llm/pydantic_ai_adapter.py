@@ -469,6 +469,97 @@ class PydanticAIAdapter:
             raise last_exception
         raise RuntimeError(f"No models available for streaming role: {role}")
 
+    # -----------------------------------------------
+    # Structured Streaming Completions
+    # -----------------------------------------------
+
+    async def stream_json_async(
+        self,
+        role: ModelRole,
+        schema: type[T],
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.3,
+        max_output_tokens: int = 2048,
+        use_fallback: bool = True,
+    ) -> AsyncIterator[T]:
+        """
+        Stream structured JSON completion with Pydantic validation.
+
+        With Gemini, you can get partial structured objects as they're generated!
+
+        Args:
+            role: Model role for selection
+            schema: Pydantic model class for output validation
+            messages: List of message dicts with "content" key
+            temperature: Sampling temperature
+            max_output_tokens: Maximum tokens in response
+            use_fallback: If True, retry with fallback models on failure
+
+        Yields:
+            AsyncIterator[T]: Async iterator yielding partial/complete schema instances
+
+        Example:
+            async for partial_plan in adapter.stream_json_async(
+                ModelRole.PLANNER,
+                RefactorPlan,
+                messages=[{"content": "Create a refactoring plan"}]
+            ):
+                print(f"Steps so far: {len(partial_plan.steps)}")
+        """
+        prompt = "\n".join(msg["content"] for msg in messages)
+        logger.info(
+            f"Starting structured streaming: role={role.value}, "
+            f"schema={schema.__name__}, use_fallback={use_fallback}"
+        )
+
+        if not use_fallback:
+            agent = self._agent(role, schema)
+            spec = self.router.choose(role).spec
+            logger.info(f"Using primary model for structured streaming: {spec.model_id}")
+
+            async with agent.run_stream(
+                prompt,
+                model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
+            ) as stream:
+                async for partial_output in stream.stream_output():
+                    yield partial_output  # type: ignore[misc]
+
+            logger.info("Structured streaming completed successfully")
+            return
+
+        # Fallback: try each model in order
+        agents = self._agents_with_fallback(role, schema)
+        last_exception: Exception | None = None
+
+        for i, (agent, model_id) in enumerate(agents):
+            try:
+                logger.info(
+                    f"Attempting structured streaming {i+1}/{len(agents)}: " f"model={model_id}"
+                )
+
+                async with agent.run_stream(
+                    prompt,
+                    model_settings={"temperature": temperature, "max_tokens": max_output_tokens},
+                ) as stream:
+                    async for partial_output in stream.stream_output():
+                        yield partial_output  # type: ignore[misc]
+
+                logger.info(f"Structured streaming succeeded on attempt {i+1}")
+                return
+
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Structured streaming failed with {model_id}: {e}")
+                if i < len(agents) - 1:
+                    logger.info("Trying fallback model...")
+                continue
+
+        logger.error("All models failed for structured streaming")
+        if last_exception:
+            raise last_exception
+        raise RuntimeError(f"No models available for structured streaming role: {role}")
+
     # ---------------------------------------------------------------
     # Sync Wrappers
     # ---------------------------------------------------------------
