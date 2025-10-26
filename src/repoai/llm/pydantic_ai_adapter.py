@@ -486,8 +486,6 @@ class PydanticAIAdapter:
         """
         Stream structured JSON completion with Pydantic validation.
 
-        With Gemini, you can get partial structured objects as they're generated!
-
         Args:
             role: Model role for selection
             schema: Pydantic model class for output validation

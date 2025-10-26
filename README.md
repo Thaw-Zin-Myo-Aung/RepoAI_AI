@@ -35,12 +35,12 @@ The main agents in the pipeline are:
 RepoAI dynamically selects models per agent role through a **Model Router**.  
 Each role has ordered fallbacks that can be overridden through environment variables.
 
-| Role | Default AIML Models (Primary → Fallbacks) | Purpose |
+| Role | Default Gemini Models (Primary → Fallbacks) | Purpose |
 |------|-------------------------------------------|----------|
-| **INTAKE** | `gemini-2.0-flash-thinking-exp-01-21` → `gemini-2.0-flash-exp` → `gemini-1.5-flash-002` | Fast reasoning for parsing user prompts |
-| **PLANNER** | `gemini-2.0-flash-thinking-exp-01-21` → `gemini-exp-1206` → `gemini-2.5-pro-exp-03-04` | Deep reasoning & JSON plan generation |
-| **PR_NARRATOR** | `gemini-2.0-flash-exp` → `gemini-1.5-flash-002` → `gemini-2.0-flash-thinking-exp-01-21` | PR summarization and rationale |
-| **CODER** | `gemini-2.5-pro-exp-03-04` → `gemini-exp-1206` → `gemini-2.0-flash-thinking-exp-01-21` | Code refactoring and completions |
+| **INTAKE** | `gemini-2.5-flash` → `gemini-2.0-flash-exp` → `gemini-2.0-flash` | Fast reasoning for parsing user prompts |
+| **PLANNER** | `gemini-2.5-pro` → `gemini-2.5-flash` → `gemini-2.0-flash` | Deep reasoning & JSON plan generation |
+| **PR_NARRATOR** | `gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.5-flash-lite` | PR summarization and rationale |
+| **CODER** | `gemini-2.5-pro` → `gemini-2.5-flash` → `gemini-2.0-flash` | Code refactoring and completions |
 | **EMBEDDING** | `text-embedding-004` | Lightweight RAG embeddings (Gemini) |
 
 ---
@@ -53,10 +53,11 @@ The router will use them in the order given (first = primary).
 ```bash
 GOOGLE_API_KEY=your_API_key_here
 
-MODEL_ROUTE_INTAKE="gemini-2.0-flash-thinking-exp-01-21,gemini-2.0-flash-exp,gemini-1.5-flash-002"
-MODEL_ROUTE_PLANNER="gemini-2.0-flash-thinking-exp-01-21,gemini-exp-1206,gemini-2.5-pro-exp-03-04"
-MODEL_ROUTE_CODER="gemini-2.5-pro-exp-03-04,gemini-exp-1206,gemini-2.0-flash-thinking-exp-01-21"
-MODEL_ROUTE_PR="gemini-2.0-flash-exp,gemini-1.5-flash-002,gemini-2.0-flash-thinking-exp-01-21"
+# For Gemini (Valid model names from https://ai.google.dev/gemini-api/docs/models)
+MODEL_ROUTE_INTAKE="gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
+MODEL_ROUTE_PLANNER="gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+MODEL_ROUTE_CODER="gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+MODEL_ROUTE_PR="gemini-2.5-flash,gemini-2.0-flash,gemini-2.5-flash-lite"
 EMBEDDING_MODEL="text-embedding-004"
 
 GEMINI_DEFAULT_TIMEOUT_S=60
