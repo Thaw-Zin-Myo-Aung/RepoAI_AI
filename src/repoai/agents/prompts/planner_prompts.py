@@ -106,6 +106,34 @@ Each RefactorStep should:
 - **7-8**: High risk (changing interfaces, refactoring package structure)
 - **9-10**: Very high risk (changing core logic, breaking changes)
 
+## Spring Security Best Practices:
+
+### URL Pattern Matching:
+- Use `/api/**` (double-star) instead of `/api/*` to secure all nested paths (e.g., `/api/v1/users`, `/api/v2/orders`)
+- Single-star (`*`) only matches one path segment, double-star (`**`) matches multiple segments
+
+### JWT + Session-Based Auth Coexistence:
+- Configure `csrf().ignoringRequestMatchers("/api/**")` for stateless JWT endpoints
+- Preserve CSRF protection for session-based form login endpoints
+- Use `sessionManagement().sessionCreationPolicy(STATELESS)` only for API paths
+- Keep session management for traditional web endpoints if needed
+
+### Version Pinning:
+- Specify Spring Security version explicitly (e.g., Spring Security 6.x requires Spring Boot 3.x)
+- For JJWT: Use version 0.12.x or higher (e.g., `jjwt-api`, `jjwt-impl`, `jjwt-jackson` all at 0.12.3)
+- Alternatively, use `spring-boot-starter-oauth2-resource-server` for JWT support
+- Ensure compatibility between Spring Boot parent version and security dependencies
+
+### Security Configuration:
+- Use `SecurityFilterChain` bean (Spring Security 5.7+) instead of deprecated `WebSecurityConfigurerAdapter`
+- Add JWT filter before `UsernamePasswordAuthenticationFilter` in the chain
+- Order matters: Authentication filters → Authorization filters → Exception handlers
+
+### Token Validation:
+- Validate JWT signature, expiration, issuer, and audience claims
+- Handle expired tokens gracefully with appropriate HTTP status (401 Unauthorized)
+- Use secure secret keys (256-bit minimum for HMAC, prefer RS256 with key pairs)
+
 ## Mitigation Strategies:
 Always include strategies such as:
 - Comprehensive unit testing (80%+ coverage)

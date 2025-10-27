@@ -38,11 +38,18 @@ async def run_complete_pipeline():
     logger.info("=" * 80)
 
     user_prompt = """
-    Add JWT authentication to the user service and protect /api/*
-    Use the latest Spring Security with JWT tokens.
-    The authentication should work alongside our existing session-based auth 
-    for backward compatibility. Focus on the com.example.auth and 
-    com.example.security packages.
+    Add JWT authentication to the user service and protect /api/**
+    Use the latest Spring Security 6.x with JWT tokens.
+    
+    Requirements:
+    - Use /api/** (double-star) to secure all nested API paths including /api/v1/users
+    - The authentication should work alongside our existing session-based auth for backward compatibility
+    - Configure csrf().ignoringRequestMatchers("/api/**") to allow stateless JWT calls without CSRF checks
+    - Use spring-boot-starter-security 3.2.x or higher (Spring Security 6.x)
+    - Add JJWT dependencies: jjwt-api, jjwt-impl, jjwt-jackson (version 0.12.x or compatible)
+    - Ensure session management is stateless for JWT endpoints while preserving session-based auth for other endpoints
+    
+    Focus on the com.example.auth and com.example.security packages.
     """
 
     intake_deps = IntakeDependencies(
