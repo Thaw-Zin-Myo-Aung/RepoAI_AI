@@ -158,7 +158,12 @@ def parse_java_file(code: str) -> JavaClass | None:
         inner_classes = []
         if primary_class.body:  # type: ignore
             for member in primary_class.body:  # type: ignore
-                if isinstance(member, javalang.tree.ClassDeclaration | javalang.tree.InterfaceDeclaration | javalang.tree.EnumDeclaration):  # type: ignore
+                if isinstance(
+                    member,
+                    javalang.tree.ClassDeclaration
+                    | javalang.tree.InterfaceDeclaration
+                    | javalang.tree.EnumDeclaration,
+                ):  # type: ignore
                     inner_classes.append(member.name)
 
         java_class = JavaClass(
