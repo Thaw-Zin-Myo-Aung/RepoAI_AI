@@ -131,7 +131,7 @@ def parse_java_file(code: str) -> JavaClass | None:
                 is_private="private" in method.modifiers if method.modifiers else False,
                 is_protected="protected" in method.modifiers if method.modifiers else False,
                 is_static="static" in method.modifiers if method.modifiers else False,
-                throws=[throw.name for throw in method.throws] if method.throws else [],
+                throws=list(method.throws) if method.throws else [],
             )
             methods.append(method_obj)
 

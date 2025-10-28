@@ -8,6 +8,7 @@ make testing easier through dependency injection.
 from dataclasses import dataclass
 
 from repoai.models import JobSpec
+from repoai.models.refactor_plan import RefactorPlan
 
 
 # Dependencies for the Intake Agent
@@ -81,3 +82,42 @@ class PlannerDependencies:
 
     enable_caching: bool = True
     """Whether to enable caching for repeated queries"""
+
+
+@dataclass
+class TransformerDependencies:
+    """
+    Dependencies for the Transformer Agent.
+
+    The Transformer Agent needs the RefactorPlan and repository access to generate actual code changes.'
+
+    Example:
+        deps = TransformerDependencies(
+            plan=plan,
+            repository_path="/path/to/repo",
+            existing_code_context={"Auth.java": "..."}
+        )
+
+        result = await transformer_agent.run(prompts, deps=deps)
+    """
+
+    plan: RefactorPlan
+    """RefactorPlan from Planner Agent with detailed steps to execute"""
+
+    repository_path: str
+    """Local path to the repository for code generation context"""
+
+    existing_code_context: dict[str, str] | None = None
+    """Optional map of file paths to their current content."""
+
+    max_retries: int = 3
+    """Maximum number of retries for agent execution"""
+
+    timeout_seconds: int = 300
+    """Timeout for agent execution in seconds (code generation may take longer)"""
+
+    enable_code_analysis: bool = True
+    """Whether to analyze existing code for better context understanding"""
+
+    java_version: str = "17"
+    """Target Java version for code generation."""
