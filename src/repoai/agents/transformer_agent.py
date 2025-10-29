@@ -19,11 +19,12 @@ from datetime import datetime
 
 from pydantic_ai import Agent, RunContext
 
-from repoai.dependencies import TransformerDependencies
+from repoai.dependencies.base import TransformerDependencies
 from repoai.explainability import RefactorMetadata
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import CodeChange, CodeChanges, RefactorPlan
 from repoai.parsers.java_ast_parser import extract_relevant_context
+from repoai.utils.file_writer import write_code_changes_to_disk
 from repoai.utils.logger import get_logger
 
 from .prompts import (
@@ -80,7 +81,8 @@ Generate actual Java code for the given refactoring step.
 Produce complete, working code that follows Java and Spring Framework best practices.
 Include proper imports, annotations, and documentation.
 """
-    # Create the Agent with CodeChange as output type
+
+    # Create the agent with CodeChange output type
     agent: Agent[TransformerDependencies, CodeChange] = Agent(
         model=model,
         deps_type=TransformerDependencies,
@@ -89,7 +91,7 @@ Include proper imports, annotations, and documentation.
         model_settings=settings,
     )
 
-    # Tool: Generate Java Class Template
+    # Tool: Generate Java class template
     @agent.tool
     def generate_class_template(
         ctx: RunContext[TransformerDependencies],
@@ -98,7 +100,7 @@ Include proper imports, annotations, and documentation.
         class_type: str = "class",
     ) -> str:
         """
-        Genereate a Java class template with package and basic structure.
+        Generate a Java class template with package and basic structure.
 
         Args:
             package_name: Java package (e.g., "com.example.auth")
@@ -172,8 +174,9 @@ public @interface {class_name} {{
 }}
 """,
         }
+
         template = templates.get(class_type.lower(), templates["class"])
-        logger.debug(f"Generated {class_type} template for {class_name}")
+        logger.debug(f"Generated {class_type} template for {package_name}.{class_name}")
         return template
 
     # Tool: Extract imports from code
@@ -237,7 +240,7 @@ public @interface {class_name} {{
         logger.debug(f"Extracted {len(signatures)} method signatures")
         return signatures
 
-    # Tool: Extract annotaions
+    # Tool: Extract annotations
     @agent.tool
     def extract_annotations(ctx: RunContext[TransformerDependencies], code: str) -> list[str]:
         """
@@ -312,7 +315,7 @@ public @interface {class_name} {{
 
     # Tool: Count lines added/removed
     @agent.tool
-    def count_diff_line(ctx: RunContext[TransformerDependencies], diff: str) -> dict[str, int]:
+    def count_diff_lines(ctx: RunContext[TransformerDependencies], diff: str) -> dict[str, int]:
         """
         Count lines added and removed in a diff.
 
@@ -332,7 +335,6 @@ public @interface {class_name} {{
         for line in diff.split("\n"):
             if line.startswith("+") and not line.startswith("+++"):
                 added += 1
-
             elif line.startswith("-") and not line.startswith("---"):
                 removed += 1
 
@@ -459,6 +461,7 @@ Generate the complete code change including:
 3. List of methods added/modified
 4. List of annotations used
 """
+
         # Run the agent for this step
         result = await transformer_agent.run(prompt, deps=dependencies)
         code_change: CodeChange = result.output
@@ -524,6 +527,16 @@ Generate the complete code change including:
 
     # Attach metadata to code changes
     code_changes.metadata = metadata
+
+    # Write files to disk if requested
+    if dependencies.write_to_disk:
+        output_dir = write_code_changes_to_disk(
+            code_changes, base_path=dependencies.output_path or "/tmp/repoai"
+        )
+        logger.info(f"Code changes written to disk: {output_dir}")
+
+        # Store output directory in metadata
+        metadata.data_sources.append(f"output_dir:{output_dir}")
 
     logger.info(
         f"Transformer Agent completed: "

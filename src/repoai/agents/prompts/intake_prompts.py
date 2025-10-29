@@ -48,8 +48,9 @@ INTAKE_INSTRUCTIONS = """**How to Parse User Requests:**
 4. **Constraint Keywords**: "backward compatible", "no breaking changes", "maintain API", "gradual migration"
 
 **Java Build System Detection:**
-- Look for mentions of Maven (pom.xml) or Gradle (build.gradle)
-- Default to Maven if not specified (most common in enterprise Java)
+- Look for mentions of Maven (pom.xml) or Gradle (build.gradle) in existing project
+- **Default to Maven** if not specified (primary build system for enterprise Java)
+- Only use Gradle if build.gradle is explicitly present in the project
 
 **Examples of Intent Extraction:**
 - "Add JWT authentication" → intent: "add_jwt_authentication"

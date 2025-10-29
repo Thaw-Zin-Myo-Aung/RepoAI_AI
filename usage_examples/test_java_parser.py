@@ -45,7 +45,7 @@ def test_parse_java_file(file_path: Path) -> None:
     """Test parsing a Java file into AST structure."""
     log_separator("TEST 1: Parse Java File into AST")
 
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         java_code = f.read()
 
     logger.info(f"📄 File: {file_path.name}")
@@ -54,7 +54,7 @@ def test_parse_java_file(file_path: Path) -> None:
     java_class = parse_java_file(java_code)
 
     if java_class:
-        logger.info(f"\n✅ Successfully parsed Java file!")
+        logger.info("\n✅ Successfully parsed Java file!")
         logger.info(f"\n📦 Package: {java_class.package}")
         logger.info(f"🏷️  Class Name: {java_class.name}")
         logger.info(f"📚 Imports: {len(java_class.imports)} imports")
@@ -67,7 +67,7 @@ def test_parse_java_file(file_path: Path) -> None:
         logger.info(f"📝 Is Abstract: {java_class.is_abstract}")
 
         # Show some methods
-        logger.info(f"\n📋 Sample Methods (showing first 5):")
+        logger.info("\n📋 Sample Methods (showing first 5):")
         for i, method in enumerate(java_class.methods[:5], 1):
             visibility = (
                 "public"
@@ -84,7 +84,7 @@ def test_parse_java_file(file_path: Path) -> None:
                 logger.info(f"     Annotations: {', '.join(method.annotations)}")
 
         # Show some fields
-        logger.info(f"\n📦 Sample Fields (showing first 5):")
+        logger.info("\n📦 Sample Fields (showing first 5):")
         for i, field in enumerate(java_class.fields[:5], 1):
             visibility = (
                 "public" if field.is_public else "private" if field.is_private else "package"
@@ -102,7 +102,7 @@ def test_extract_relevant_context_small(file_path: Path) -> None:
     """Test context extraction for small intents."""
     log_separator("TEST 2: Extract Context for Authentication Intent")
 
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         java_code = f.read()
 
     intent = "Add JWT authentication to the login endpoint"
@@ -113,12 +113,12 @@ def test_extract_relevant_context_small(file_path: Path) -> None:
 
     context = extract_relevant_context(java_code, intent, max_tokens)
 
-    logger.info(f"\n📊 Extracted Context Stats:")
+    logger.info("\n📊 Extracted Context Stats:")
     logger.info(f"  - Length: {len(context)} characters")
     logger.info(f"  - Lines: {len(context.splitlines())} lines")
     logger.info(f"  - Estimated tokens: ~{len(context) // 4}")
 
-    logger.info(f"\n📝 Extracted Context Preview (first 1000 chars):")
+    logger.info("\n📝 Extracted Context Preview (first 1000 chars):")
     logger.info("-" * 80)
     logger.info(context[:1000])
     if len(context) > 1000:
@@ -130,7 +130,7 @@ def test_extract_relevant_context_password(file_path: Path) -> None:
     """Test context extraction for password-related intent."""
     log_separator("TEST 3: Extract Context for Password Reset Intent")
 
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         java_code = f.read()
 
     intent = "Implement password reset functionality with email verification"
@@ -141,7 +141,7 @@ def test_extract_relevant_context_password(file_path: Path) -> None:
 
     context = extract_relevant_context(java_code, intent, max_tokens)
 
-    logger.info(f"\n📊 Extracted Context Stats:")
+    logger.info("\n📊 Extracted Context Stats:")
     logger.info(f"  - Length: {len(context)} characters")
     logger.info(f"  - Lines: {len(context.splitlines())} lines")
     logger.info(f"  - Estimated tokens: ~{len(context) // 4}")
@@ -152,7 +152,7 @@ def test_extract_relevant_context_password(file_path: Path) -> None:
         count = context.lower().count(keyword)
         logger.info(f"  - '{keyword}' mentions: {count}")
 
-    logger.info(f"\n📝 Method signatures in context:")
+    logger.info("\n📝 Method signatures in context:")
     for line in context.splitlines():
         if "public" in line and "(" in line and "{" not in line:
             logger.info(f"  {line.strip()}")
@@ -162,7 +162,7 @@ def test_extract_relevant_context_role(file_path: Path) -> None:
     """Test context extraction for role management intent."""
     log_separator("TEST 4: Extract Context for Role Management Intent")
 
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         java_code = f.read()
 
     intent = "Add role-based access control with assignRole and removeRole methods"
@@ -173,14 +173,14 @@ def test_extract_relevant_context_role(file_path: Path) -> None:
 
     context = extract_relevant_context(java_code, intent, max_tokens)
 
-    logger.info(f"\n📊 Extracted Context Stats:")
+    logger.info("\n📊 Extracted Context Stats:")
     logger.info(f"  - Length: {len(context)} characters")
     logger.info(f"  - Lines: {len(context.splitlines())} lines")
     logger.info(f"  - Estimated tokens: ~{len(context) // 4}")
 
     # Check if role-related methods are included
     role_methods = ["assignRole", "removeRole", "hasRole"]
-    logger.info(f"\n🔍 Role-related methods found:")
+    logger.info("\n🔍 Role-related methods found:")
     for method in role_methods:
         if method in context:
             logger.info(f"  ✅ {method}")
@@ -192,7 +192,7 @@ def test_large_file_handling(file_path: Path) -> None:
     """Test how parser handles large files."""
     log_separator("TEST 5: Large File Token Management")
 
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         java_code = f.read()
 
     file_size = len(java_code)
@@ -202,7 +202,7 @@ def test_large_file_handling(file_path: Path) -> None:
     # Test with different token limits
     token_limits = [500, 1000, 2000, 5000]
 
-    logger.info(f"\n📊 Testing different token limits:")
+    logger.info("\n📊 Testing different token limits:")
     for max_tokens in token_limits:
         context = extract_relevant_context(
             java_code, "authentication and authorization", max_tokens

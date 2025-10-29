@@ -25,7 +25,8 @@ class IntakeDependencies:
         deps = IntakeDependencies(
             user_id="user_123",
             session_id="session_abc",
-            repository_url="https://github.com/example/project"
+            repository_url="https://github.com/example/project",
+            code_context={"src/main/java/.../UserService.java": java_code}
         )
 
         result = await intake_agent.run(prompt, deps=deps)
@@ -39,6 +40,9 @@ class IntakeDependencies:
 
     repository_url: str | None = None
     """Optional GitHub repository URL for context"""
+
+    code_context: dict[str, str] | None = None
+    """Optional map of file paths to their code content for context-aware analysis"""
 
     max_retries: int = 3
     """Maximum number of retries for agent execution"""
@@ -84,40 +88,53 @@ class PlannerDependencies:
     """Whether to enable caching for repeated queries"""
 
 
+# Dependencies for the Transformer Agent
 @dataclass
 class TransformerDependencies:
     """
     Dependencies for the Transformer Agent.
 
-    The Transformer Agent needs the RefactorPlan and repository access to generate actual code changes.'
+    The Transformer Agent needs the RefactorPlan and repository access
+    to generate actual code changes.
 
     Example:
         deps = TransformerDependencies(
             plan=plan,
             repository_path="/path/to/repo",
-            existing_code_context={"Auth.java": "..."}
+            existing_code_context={"Auth.java": "..."},
+            write_to_disk=True,
+            output_path="/tmp/repoai"
         )
 
-        result = await transformer_agent.run(prompts, deps=deps)
+        result = await transformer_agent.run(prompt, deps=deps)
     """
 
     plan: RefactorPlan
-    """RefactorPlan from Planner Agent with detailed steps to execute"""
+    """RefactorPlan from Planner Agent with steps to execute"""
 
-    repository_path: str
-    """Local path to the repository for code generation context"""
+    repository_path: str | None = None
+    """Optional local path to the repository"""
+
+    repository_url: str | None = None
+    """Optional GitHub repository URL"""
 
     existing_code_context: dict[str, str] | None = None
-    """Optional map of file paths to their current content."""
+    """Optional map of file paths to their current content"""
 
     max_retries: int = 3
     """Maximum number of retries for agent execution"""
 
-    timeout_seconds: int = 300
-    """Timeout for agent execution in seconds (code generation may take longer)"""
+    timeout_seconds: int = 180
+    """Timeout for agent execution in seconds (Transformer needs more time)"""
 
     enable_code_analysis: bool = True
-    """Whether to analyze existing code for better context understanding"""
+    """Whether to enable static code analysis during generation"""
 
     java_version: str = "17"
-    """Target Java version for code generation."""
+    """Target Java version for code generation"""
+
+    write_to_disk: bool = True
+    """Whether to write generated files to disk (needed for compilation/testing)"""
+
+    output_path: str | None = None
+    """Output directory path (defaults to /tmp/repoai if None)"""

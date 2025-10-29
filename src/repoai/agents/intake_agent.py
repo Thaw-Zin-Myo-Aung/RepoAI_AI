@@ -22,6 +22,7 @@ from repoai.dependencies import IntakeDependencies
 from repoai.explainability import RefactorMetadata
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import JobSpec
+from repoai.parsers.java_ast_parser import extract_relevant_context
 from repoai.utils.logger import get_logger
 
 from .prompts import INTAKE_INSTRUCTIONS, INTAKE_JAVA_EXAMPLES, INTAKE_SYSTEM_PROMPT
@@ -99,6 +100,68 @@ Be specific and detailed in requirements and constraints.
 
         logger.debug(f"Generated Job ID: {job_id}")
         return job_id
+
+    # Tool: Extract code context from Java files
+    @agent.tool
+    def extract_code_context(
+        ctx: RunContext[IntakeDependencies],
+        file_path: str,
+        focus_keywords: list[str] | None = None,
+    ) -> str:
+        """
+        Extract relevant context from a Java file for understanding the codebase.
+
+        Automatically uses AST parsing for large files (>500 lines) to extract
+        only relevant classes, methods, and fields based on the focus keywords.
+
+        Args:
+            file_path: Path to the Java file (e.g., "UserService.java")
+            focus_keywords: Optional keywords to focus extraction (e.g., ["user", "authentication"])
+
+        Returns:
+            str: Relevant code context (full for small files, extracted for large files)
+
+        Example:
+            context = extract_code_context("UserManagementService.java", ["audit", "logging"])
+            # Returns targeted context for large files, full content for small files
+        """
+        if not ctx.deps.code_context:
+            logger.debug("No code context available in dependencies")
+            return f"// No code context available for {file_path}"
+
+        # Find the file (exact match or partial match)
+        code = None
+        matched_path = None
+        for path, content in ctx.deps.code_context.items():
+            if file_path in path or path.endswith(file_path):
+                code = content
+                matched_path = path
+                break
+
+        if not code:
+            logger.debug(f"File {file_path} not found in code context")
+            return f"// File {file_path} not available in code context"
+
+        # For large files, use AST extraction
+        line_count = len(code.split("\n"))
+        if line_count > 500:
+            logger.info(
+                f"Large file detected ({line_count} lines), using AST extraction for {matched_path}"
+            )
+
+            # Build intent from focus keywords
+            intent = " ".join(focus_keywords) if focus_keywords else "analyze codebase"
+
+            relevant_context = extract_relevant_context(code, intent, max_tokens=2000)
+            logger.debug(
+                f"Extracted context: {len(relevant_context)} chars from {len(code)} chars "
+                f"({100 - (len(relevant_context) / len(code) * 100):.1f}% reduction)"
+            )
+            return relevant_context
+
+        # Small files - return full content
+        logger.debug(f"Returning full content for {matched_path} ({line_count} lines)")
+        return code
 
     # Tool: Validate Java Package Naming
     @agent.tool
@@ -222,6 +285,27 @@ Be specific and detailed in requirements and constraints.
 
         logger.debug(f"Suggested exclusions: {exclusions}")
         return exclusions
+
+    # Tool: List available code files
+    @agent.tool
+    def list_available_files(ctx: RunContext[IntakeDependencies]) -> list[str]:
+        """
+        List all Java files available in the code context.
+
+        Returns:
+            list[str]: List of available file paths
+
+        Example:
+            files = list_available_files()
+            # Returns: ["UserService.java", "AuthController.java", ...]
+        """
+        if not ctx.deps.code_context:
+            logger.debug("No code context available")
+            return []
+
+        files = list(ctx.deps.code_context.keys())
+        logger.debug(f"Available files: {len(files)} files")
+        return files
 
     logger.info("Intake Agent created successfully.")
     return agent

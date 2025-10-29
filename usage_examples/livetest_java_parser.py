@@ -14,7 +14,6 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -55,18 +54,16 @@ def log_separator(title: str) -> None:
 
 
 async def test_intake_with_java_context():
-    """Test intake agent with Java file context."""
-    log_separator("STEP 1: Extract Context from Java File")
+    """Read Java file and prepare for intake agent."""
+    log_separator("STEP 1: Load Java File")
 
     # Read the Java file
     java_file = Path(__file__).parent / "test_data" / "UserManagementService.java"
-    with open(java_file, "r") as f:
+    with open(java_file) as f:
         java_code = f.read()
 
     logger.info(f"📄 Java File: {java_file.name}")
-    logger.info(
-        f"📏 Original size: {len(java_code)} characters ({len(java_code.splitlines())} lines)"
-    )
+    logger.info(f"📏 File size: {len(java_code)} characters ({len(java_code.splitlines())} lines)")
 
     # Simulate a user's refactoring request
     user_request = """
@@ -75,53 +72,43 @@ async def test_intake_with_java_context():
     """
 
     logger.info(f"\n📝 User Request:\n{user_request}")
-
-    # Extract relevant context (simulating medium file size 500-2000 lines)
-    logger.info("\n🔍 Extracting relevant context with AST parser...")
-    extracted_context = extract_relevant_context(java_code, user_request, max_tokens=2000)
-
-    logger.info(f"\n📊 Context Extraction Results:")
-    logger.info(f"  - Original: {len(java_code)} chars, {len(java_code.splitlines())} lines")
     logger.info(
-        f"  - Extracted: {len(extracted_context)} chars, {len(extracted_context.splitlines())} lines"
+        "\n� Note: Intake agent will automatically extract relevant context using AST parser"
     )
-    logger.info(f"  - Reduction: {100 - (len(extracted_context) / len(java_code) * 100):.1f}%")
-    logger.info(f"  - Estimated tokens: ~{len(extracted_context) // 4}")
 
-    return user_request, java_code, extracted_context
+    return user_request, java_code
 
 
-async def test_intake_agent(user_request: str, context: str, adapter: PydanticAIAdapter):
-    """Test intake agent with extracted context."""
+async def test_intake_agent(
+    user_request: str, java_code: str, adapter: PydanticAIAdapter
+) -> JobSpec | None:
+    """Test intake agent with Java code context."""
     log_separator("STEP 2: Run Intake Agent")
 
-    logger.info("🤖 Running intake agent...")
-
-    # Prepare the full prompt with context
-    full_prompt = f"""
-User Request:
-{user_request}
-
-Current Code Context:
-```java
-{context[:1500]}
-... (context truncated for intake)
-```
-
-Please analyze this refactoring request and provide a structured job specification.
-"""
-
-    logger.info("\n📤 Sending request to intake agent...")
-    logger.info(f"   Prompt length: {len(full_prompt)} characters")
+    logger.info("🤖 Running intake agent with code context...")
+    logger.info(
+        f"   Java code size: {len(java_code)} characters ({len(java_code.splitlines())} lines)"
+    )
 
     try:
+        # Create dependencies with code context
+        # The agent will automatically extract relevant context if needed!
         intake_deps = IntakeDependencies(
             user_id="test_user",
             session_id="test_session",
             repository_url="https://github.com/example/spring-boot-app",
+            code_context={
+                "UserManagementService.java": java_code
+            },  # Agent will use AST extraction automatically
         )
 
-        job_spec, metadata = await run_intake_agent(full_prompt, intake_deps, adapter)
+        logger.info("\n📤 Sending request to intake agent...")
+        logger.info(f"   User request: {user_request.strip()}")
+        logger.info(
+            "   Agent has access to code context and will extract relevant parts automatically"
+        )
+
+        job_spec, metadata = await run_intake_agent(user_request, intake_deps, adapter)
 
         logger.info("\n✅ Intake Agent Response:")
         logger.info(f"\n� Job ID: {job_spec.job_id}")
@@ -157,7 +144,7 @@ Please analyze this refactoring request and provide a structured job specificati
 
 async def test_planner_agent(
     job_spec: JobSpec, extracted_context: str, adapter: PydanticAIAdapter
-) -> Optional[RefactorPlan]:
+) -> RefactorPlan | None:
     """Test the planner agent with the job specification."""
     log_separator("🎯 STEP 3: Running Planner Agent")
 
@@ -182,7 +169,7 @@ async def test_planner_agent(
 
         if plan.risk_assessment:
             risk = plan.risk_assessment
-            logger.info(f"\n   ⚠️  Risk Assessment:")
+            logger.info("\n   ⚠️  Risk Assessment:")
             logger.info(f"      Overall Risk: {risk.overall_risk_level}")
             logger.info(f"      Details: {risk}")
 
@@ -203,7 +190,7 @@ async def compare_with_without_parser():
     log_separator("STEP 4: Performance Comparison")
 
     java_file = Path(__file__).parent / "test_data" / "UserManagementService.java"
-    with open(java_file, "r") as f:
+    with open(java_file) as f:
         java_code = f.read()
 
     user_request = "Add audit logging to track user operations"
@@ -214,11 +201,11 @@ async def compare_with_without_parser():
     ast_time = (datetime.now() - start_time).total_seconds()
 
     logger.info("📊 Comparison Results:")
-    logger.info(f"\n   Without AST Parser:")
+    logger.info("\n   Without AST Parser:")
     logger.info(f"   - Would send: {len(java_code)} characters ({len(java_code) // 4} est. tokens)")
-    logger.info(f"   - Processing time: N/A (full file)")
+    logger.info("   - Processing time: N/A (full file)")
 
-    logger.info(f"\n   With AST Parser:")
+    logger.info("\n   With AST Parser:")
     logger.info(
         f"   - Sends: {len(extracted_context)} characters ({len(extracted_context) // 4} est. tokens)"
     )
@@ -248,14 +235,16 @@ async def main():
         # Initialize the adapter
         adapter = PydanticAIAdapter()
 
-        # Step 1: Extract context
-        user_request, full_code, extracted_context = await test_intake_with_java_context()
+        # Step 1: Load Java file
+        user_request, java_code = await test_intake_with_java_context()
 
-        # Step 2: Run intake agent
-        job_spec = await test_intake_agent(user_request, extracted_context, adapter)
+        # Step 2: Run intake agent (it will extract context automatically!)
+        job_spec = await test_intake_agent(user_request, java_code, adapter)
 
         if job_spec:
             # Step 3: Run planner agent
+            # For planner, we manually extract context since it needs focused context per step
+            extracted_context = extract_relevant_context(java_code, user_request, max_tokens=2000)
             plan = await test_planner_agent(job_spec, extracted_context, adapter)
 
             if plan:
@@ -264,12 +253,12 @@ async def main():
 
                 log_separator("✅ LIVE TEST COMPLETED SUCCESSFULLY")
                 logger.info("\n🎉 Summary:")
-                logger.info(f"   ✅ Java file parsed and context extracted")
-                logger.info(f"   ✅ Intake agent produced job specification")
+                logger.info("   ✅ Java file parsed and context extracted")
+                logger.info("   ✅ Intake agent produced job specification")
                 logger.info(
                     f"   ✅ Planner agent created refactoring plan with {len(plan.steps) if plan.steps else 0} steps"
                 )
-                logger.info(f"   ✅ AST parser reduced token usage by 90%")
+                logger.info("   ✅ AST parser reduced token usage by 90%")
             else:
                 logger.error("\n❌ Planner agent failed to produce a plan")
         else:

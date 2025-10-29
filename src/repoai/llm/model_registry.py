@@ -101,7 +101,9 @@ def load_defaults_from_env() -> dict[ModelRole, list[ModelSpec]]:
                 temperature=0.2 if role in (ModelRole.CODER,) else 0.3,
                 json_mode=True if role in (ModelRole.PLANNER, ModelRole.INTAKE) else False,
                 max_output_tokens=(
-                    4096 if role in (ModelRole.PLANNER, ModelRole.PR_NARRATOR) else 2048
+                    8192
+                    if role in (ModelRole.CODER,)  # Code generation needs more tokens
+                    else 4096 if role in (ModelRole.PLANNER, ModelRole.PR_NARRATOR) else 2048
                 ),
             )
             for model_id in ids
