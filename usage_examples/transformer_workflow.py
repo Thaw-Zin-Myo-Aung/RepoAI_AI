@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from repoai.agents import run_intake_agent, run_planner_agent, run_transformer_agent
 from repoai.dependencies import IntakeDependencies, PlannerDependencies, TransformerDependencies
 from repoai.llm import PydanticAIAdapter
+from repoai.utils.file_writer import write_code_changes_to_disk
 from repoai.utils.logger import get_logger
 
 # Output file for logging
@@ -243,35 +244,52 @@ async def run_full_pipeline():
             )
             logger.info(f"Annotations: {first_change.annotations_added}")
 
-    # Save all generated code to files
-    console.print("\n[bold]Saving Generated Code[/bold]")
+    # ========================================================================
+    # STEP 4.5: Save Generated Code Using FileWriter
+    # ========================================================================
+    console.print("\n[bold]Step 4.5: Save Generated Code Using FileWriter[/bold]")
     console.print("─" * 80)
-    logger.info("Saving generated code to files...")
+    logger.info("Using FileWriter utility to save generated code...")
 
-    saved_files = []
-    for i, change in enumerate(code_changes.changes, 1):
-        if change.modified_content:
-            # Create filename based on job_id and change index
-            # Extract simple filename from path if available
-            if change.file_path:
-                original_name = Path(change.file_path).stem
-                filename = f"{job_spec.job_id}_{i}_{original_name}.java"
-            elif change.class_name:
-                filename = f"{job_spec.job_id}_{i}_{change.class_name}.java"
-            else:
-                filename = f"{job_spec.job_id}_{i}_generated.java"
+    # Use FileWriter to save code changes with Maven project structure
+    output_dir = write_code_changes_to_disk(
+        code_changes, base_path=str(Path(__file__).parent / "transformer_output")
+    )
 
-            output_path = Path(__file__).parent / filename
+    logger.info(f"FileWriter saved files to: {output_dir}")
+    console.print(f"[green]✓[/green] Files saved to: {output_dir}")
 
-            # Save the file
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(change.modified_content)
+    # Verify and list saved files
+    if output_dir.exists():
+        logger.info("Verifying saved files...")
 
-            saved_files.append(output_path)
-            logger.info(f"Saved: {filename} ({len(change.modified_content)} chars)")
-            console.print(f"[green]✓[/green] Saved: {filename}")
+        # Check for pom.xml
+        pom_file = output_dir / "pom.xml"
+        if pom_file.exists():
+            logger.info(f"✓ Maven pom.xml created: {pom_file}")
+            console.print("[green]✓[/green] Maven pom.xml created")
 
-    logger.info(f"Total files saved: {len(saved_files)}")
+        # List all generated files
+        all_files = list(output_dir.rglob("*"))
+        saved_files = [f for f in all_files if f.is_file()]
+
+        logger.info(f"Total files saved: {len(saved_files)}")
+        console.print(f"[green]✓[/green] Total files saved: {len(saved_files)}")
+
+        # Show directory structure
+        console.print("\n[cyan]Directory Structure:[/cyan]")
+        for file in sorted(saved_files[:10]):  # Show first 10 files
+            rel_path = file.relative_to(output_dir)
+            console.print(f"  • {rel_path}")
+            logger.info(f"  Saved: {rel_path}")
+
+        if len(saved_files) > 10:
+            console.print(f"  • ... and {len(saved_files) - 10} more files")
+            logger.info(f"  ... and {len(saved_files) - 10} more files")
+    else:
+        logger.error(f"Output directory not found: {output_dir}")
+        console.print(f"[red]✗[/red] Output directory not found: {output_dir}")
+        saved_files = []
 
     # ========================================================================
     # STEP 5: Pipeline Summary
@@ -294,8 +312,9 @@ async def run_full_pipeline():
     logger.info(f"Code generated: {code_changes.lines_added} lines")
     logger.info(f"Classes created: {code_changes.classes_created}")
     logger.info(f"Generated files saved: {len(saved_files)}")
+    logger.info(f"Output directory: {output_dir}")
     logger.info(f"Total execution time: {total_time:.0f}ms")
-    logger.info(f"Output saved to: {OUTPUT_FILE}")
+    logger.info(f"Log saved to: {OUTPUT_FILE}")
     logger.info("=" * 80)
 
     console.print(
@@ -318,10 +337,14 @@ async def run_full_pipeline():
             f"[cyan]AST Parser:[/cyan]\n"
             f"  • Automatic context extraction enabled\n"
             f"  • Token optimization: ~90% reduction\n\n"
-            f"[yellow]Files saved:[/yellow]\n"
-            + "\n".join([f"  • {f.name}" for f in saved_files[:5]])
-            + (f"\n  • ... and {len(saved_files) - 5} more" if len(saved_files) > 5 else "")
-            + f"\n\n[yellow]Log saved to:[/yellow] {OUTPUT_FILE}\n\n"
+            f"[yellow]Output Directory:[/yellow]\n"
+            f"  {output_dir}\n\n"
+            f"[yellow]Maven Structure:[/yellow]\n"
+            f"  • pom.xml with dependencies\n"
+            f"  • src/main/java/ structure\n"
+            f"  • {len(saved_files)} files total\n\n"
+            f"[yellow]Log saved to:[/yellow]\n"
+            f"  {OUTPUT_FILE}\n\n"
             "[yellow]Next:[/yellow] Run Validator Agent to test and validate changes",
             title="✨ Success",
             border_style="green",
