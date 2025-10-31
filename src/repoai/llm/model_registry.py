@@ -93,21 +93,25 @@ def load_defaults_from_env() -> dict[ModelRole, list[ModelSpec]]:
             ids = _default_models_for(role)
 
         # Turn model IDs into ModelSpec with light heuristics
-        specs: list[ModelSpec] = [
-            ModelSpec(
-                provider=_infer_provider(model_id),
-                model_id=model_id,
-                # Sensible per-role defaults
-                temperature=0.2 if role in (ModelRole.CODER,) else 0.3,
-                json_mode=True if role in (ModelRole.PLANNER, ModelRole.INTAKE) else False,
-                max_output_tokens=(
-                    8192
-                    if role in (ModelRole.CODER,)  # Code generation needs more tokens
-                    else 4096 if role in (ModelRole.PLANNER, ModelRole.PR_NARRATOR) else 2048
-                ),
+        specs: list[ModelSpec] = []
+        for model_id in ids:
+            # Determine max_output_tokens based on role
+            if role in (ModelRole.CODER,):
+                max_tokens = 8192  # Code generation needs more tokens
+            elif role in (ModelRole.PLANNER, ModelRole.PR_NARRATOR):
+                max_tokens = 4096
+            else:
+                max_tokens = 2048
+
+            specs.append(
+                ModelSpec(
+                    provider=_infer_provider(model_id),
+                    model_id=model_id,
+                    temperature=0.2 if role in (ModelRole.CODER,) else 0.3,
+                    json_mode=True if role in (ModelRole.PLANNER, ModelRole.INTAKE) else False,
+                    max_output_tokens=max_tokens,
+                )
             )
-            for model_id in ids
-        ]
 
         table[role] = specs
     return table
