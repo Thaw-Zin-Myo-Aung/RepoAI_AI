@@ -7,7 +7,7 @@ make testing easier through dependency injection.
 
 from dataclasses import dataclass
 
-from repoai.models import JobSpec
+from repoai.models import CodeChanges, JobSpec
 from repoai.models.refactor_plan import RefactorPlan
 
 
@@ -138,3 +138,49 @@ class TransformerDependencies:
 
     output_path: str | None = None
     """Output directory path (defaults to /tmp/repoai if None)"""
+
+
+@dataclass
+class ValidatorDependencies:
+    """
+    Dependencies for the Validator Agent.
+
+    The Validator Agent needs the CodeChanges and optional test results
+    for comprehensive validation.
+
+    Example:
+        deps = ValidatorDependencies(
+            code_changes=code_changes,
+            run_tests=True,
+            test_files_path="/path/to/tests"
+        )
+
+        result = await validator_agent.run(prompt, deps=deps)
+    """
+
+    code_changes: CodeChanges
+    """CodeChanges from Transformer Agent to validate."""
+
+    repository_path: str | None = None
+    """Optional local path to the repository."""
+
+    test_files_path: str | None = None
+    """Optional path to test files for coverage analysis."""
+
+    run_tests: bool = False
+    """Whether to actually run unit tests (require test environment)."""
+
+    run_static_analysis: bool = False
+    """Whether to run actual static analysis tools (Checkstyle, PMD)"""
+
+    max_retries: int = 2
+    """Maximum number of retries for agent executions."""
+
+    timeout_seconds: int = 120
+    """Timeout for agent execution in seconds."""
+
+    min_test_coverage: float = 0.7
+    """Minimum required test coverage (0.0-1.0)"""
+
+    strict_mode: bool = False
+    """If True, fail on any quality issues."""

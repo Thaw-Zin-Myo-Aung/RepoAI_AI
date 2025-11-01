@@ -462,8 +462,13 @@ Generate the complete code change including:
 4. List of annotations used
 """
 
-        # Run the agent for this step
-        result = await transformer_agent.run(prompt, deps=dependencies)
+        # Run the agent for this step with increased usage limits
+        # (default is 50 requests, but complex refactorings may need more)
+        from pydantic_ai import UsageLimits
+
+        result = await transformer_agent.run(
+            prompt, deps=dependencies, usage_limits=UsageLimits(request_limit=200)
+        )
         code_change: CodeChange = result.output
 
         # Ensure change_type is set
