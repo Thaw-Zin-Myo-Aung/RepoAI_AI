@@ -1,8 +1,4 @@
-"""
-Data models for Orchestrator Agent.
-
-Location: src/repoai/models/orchestrator_models.py
-"""
+"""Data models for Orchestrator Agent."""
 
 from __future__ import annotations
 
@@ -13,7 +9,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from repoai.models import CodeChanges, JobSpec, PRDescription, RefactorPlan, ValidationResult
+from . import CodeChanges, JobSpec, PRDescription, RefactorPlan, ValidationResult
 
 
 class PipelineStage(str, Enum):
@@ -34,9 +30,7 @@ class PipelineStage(str, Enum):
 
 
 class PipelineStatus(str, Enum):
-    """
-    Status of pipeline execution.
-    """
+    """Status of Pipeline execution."""
 
     PENDING = "pending"
     RUNNING = "running"
@@ -83,7 +77,7 @@ class PipelineState:
     """Current execution status"""
 
     user_prompt: str = ""
-    """Original user request"""
+    """Original user prompt/request"""
 
     # Agent results (populated as pipeline progresses)
     job_spec: JobSpec | None = None
@@ -126,7 +120,7 @@ class PipelineState:
 
     # User interactions
     user_confirmations: list[dict[str, str]] = field(default_factory=list)
-    """Record of user confirmations requested and received"""
+    """Record of user confirmations requested and receieved"""
 
     @property
     def elapsed_time_ms(self) -> float:
@@ -263,7 +257,7 @@ class PipelineUpdateMessage(BaseModel):
     )
 
 
-class PipelineResult(BaseModel):
+class PipeLineResult(BaseModel):
     """
     Final result of pipeline execution.
 

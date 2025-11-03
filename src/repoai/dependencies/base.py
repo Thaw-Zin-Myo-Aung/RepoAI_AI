@@ -5,9 +5,16 @@ Each agent has its own dependency type to ensure type safety and
 make testing easier through dependency injection.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from repoai.models import CodeChanges, JobSpec, RefactorPlan, ValidationResult
+from repoai.models import (
+    CodeChanges,
+    JobSpec,
+    PipelineState,
+    RefactorPlan,
+    ValidationResult,
+)
 
 
 # Dependencies for the Intake Agent
@@ -139,6 +146,7 @@ class TransformerDependencies:
     """Output directory path (defaults to /tmp/repoai if None)"""
 
 
+# Dependencies for the Validator Agent
 @dataclass
 class ValidatorDependencies:
     """
@@ -185,6 +193,7 @@ class ValidatorDependencies:
     """If True, fail on any quality issues."""
 
 
+# Dependencies for the PR Narrator Agent
 @dataclass
 class PRNarratorDependencies:
     """
@@ -226,3 +235,84 @@ class PRNarratorDependencies:
 
     target_audience: str = "technical"
     """Target Audience: 'technical', 'business', or 'mixed'."""
+
+
+# Dependencies for the Orchestrator Agent
+@dataclass
+class OrchestratorDependencies:
+    """
+    Dependencies for the Orchestrator Agent.
+
+    The Orchestrator coordinates all other agents and manages the workflow.
+
+    Example:
+        deps = OrchestratorDependencies(
+            user_id="developer_001",
+            session_id="session_123",
+            repository_url="https://github.com/example/repo",
+            max_retries=3,
+            auto_fix_enabled=True,
+            send_message=my_send_function,
+            get_user_input=my_input_function
+        )
+
+        orchestrator = OrchestratorAgent(deps)
+        result = await orchestrator.run(user_prompt)
+    """
+
+    user_id: str
+    """Unique identifier for the user"""
+
+    session_id: str
+    """Unique identifier for this session"""
+
+    pipeline_state: PipelineState | None = None
+    """Optional pipeline state for tracking execution progress"""
+
+    repository_url: str | None = None
+    """Optional repository URL for context"""
+
+    repository_path: str | None = None
+    """Optional local repository path"""
+
+    max_retries: int = 3
+    """Maximum number of validation retry attempts"""
+
+    auto_fix_enabled: bool = True
+    """Whether to automatically attempt to fix validation errors"""
+
+    timeout_seconds: int = 300
+    """Total timeout for pipeline execution (5 minutes)"""
+
+    enable_user_interaction: bool = True
+    """Whether to ask user for confirmations"""
+
+    enable_progress_updates: bool = True
+    """Whether to send real-time progress updates"""
+
+    output_path: str | None = None
+    """Path for writing generated files (defaults to /tmp/repoai)"""
+
+    # Chat interface callbacks (optional)
+    send_message: Callable[[str], None] | None = None
+    """Function to send messages to user (e.g., websocket.send)"""
+
+    get_user_input: Callable[[str], str] | None = None
+    """Function to get input from user (e.g., websocket.receive)"""
+
+    # Approval thresholds
+    high_risk_threshold: int = 7
+    """Risk level (0-10) that requires user approval"""
+
+    low_confidence_threshold: float = 0.7
+    """Confidence level (0-1) that requires user confirmation"""
+
+    # Quality requirements
+    min_test_coverage: float = 0.7
+    """Minimum required test coverage (0.0-1.0)"""
+
+    require_all_checks_pass: bool = False
+    """If True, all validation checks must pass (strict mode)"""
+
+    allow_breaking_changes: bool = True
+    """Whether to allow refactorings with breaking changes"""
