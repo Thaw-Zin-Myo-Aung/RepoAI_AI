@@ -7,8 +7,7 @@ make testing easier through dependency injection.
 
 from dataclasses import dataclass
 
-from repoai.models import CodeChanges, JobSpec
-from repoai.models.refactor_plan import RefactorPlan
+from repoai.models import CodeChanges, JobSpec, RefactorPlan, ValidationResult
 
 
 # Dependencies for the Intake Agent
@@ -184,3 +183,46 @@ class ValidatorDependencies:
 
     strict_mode: bool = False
     """If True, fail on any quality issues."""
+
+
+@dataclass
+class PRNarratorDependencies:
+    """
+    Dependencies for the PR Narrator Agent.
+
+    The PR Narrator Agent needs code changes and validation results to create comprehensive PR Descriptions.
+
+    Example:
+        deps = PRNarratorDependencies(
+            code_changes=code_changes,
+            validation_result=validation_result,
+            plan_id="plan_123",
+            include_migration_guide=True
+        )
+
+        result = await pr_narrator_agent.run(prompt, deps=deps)
+    """
+
+    code_changes: CodeChanges
+    """CodeChanges from Transformer Agent."""
+
+    validation_result: ValidationResult
+    """ValidationResult from Validator Agent."""
+
+    plan_id: str
+    """Plan ID for reference"""
+
+    repository_url: str | None = None
+    """Optional Repository URL for PR links"""
+
+    include_migration_guide: bool = True
+    """Whether to include migration guides for breaking changes."""
+
+    max_retries: int = 2
+    """Maximum number of retries for agent executions."""
+
+    timeout_seconds: int = 90
+    """Timeout for agent execution in seconds."""
+
+    target_audience: str = "technical"
+    """Target Audience: 'technical', 'business', or 'mixed'."""

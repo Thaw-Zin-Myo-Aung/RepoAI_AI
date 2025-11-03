@@ -1,4 +1,4 @@
-"""System prompts for RepoAI Agents."""
+"""Instructions, System and Example prompts for RepoAI Agents."""
 
 from .intake_prompts import (
     INTAKE_INSTRUCTIONS,
@@ -9,6 +9,11 @@ from .planner_prompts import (
     PLANNER_INSTRUCTIONS,
     PLANNER_JAVA_EXAMPLES,
     PLANNER_SYSTEM_PROMPT,
+)
+from .pr_narrator_prompts import (
+    PR_NARRATOR_INSTRUCTIONS,
+    PR_NARRATOR_JAVA_EXAMPLES,
+    PR_NARRATOR_SYSTEM_PROMPT,
 )
 from .transformer_prompts import (
     TRANSFORMER_INSTRUCTIONS,
@@ -34,4 +39,7 @@ __all__ = [
     "VALIDATOR_SYSTEM_PROMPT",
     "VALIDATOR_INSTRUCTIONS",
     "VALIDATOR_JAVA_EXAMPLES",
+    "PR_NARRATOR_SYSTEM_PROMPT",
+    "PR_NARRATOR_INSTRUCTIONS",
+    "PR_NARRATOR_JAVA_EXAMPLES",
 ]
