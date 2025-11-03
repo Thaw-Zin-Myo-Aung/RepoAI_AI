@@ -172,19 +172,19 @@ class PipelineState:
         """Check if pipeline is currently running."""
         return self.status == PipelineStatus.RUNNING
 
-    def add_error(self, error: str):
+    def add_error(self, error: str) -> None:
         """Add an error message."""
         self.errors.append(error)
 
-    def add_warning(self, warning: str):
+    def add_warning(self, warning: str) -> None:
         """Add a warning message."""
         self.warnings.append(warning)
 
-    def record_stage_time(self, stage: PipelineStage, duration_ms: float):
+    def record_stage_time(self, stage: PipelineStage, duration_ms: float) -> None:
         """Record time spent in a stage."""
         self.stage_timings[stage.value] = duration_ms
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         """Convert state to dictionary for serialization."""
         return {
             "session_id": self.session_id,
@@ -240,7 +240,9 @@ class PipelineUpdateMessage(BaseModel):
 
     timestamp: datetime = Field(default_factory=datetime.now)
 
-    data: dict | None = Field(default=None, description="Additional data (e.g., partial results)")
+    data: dict[str, object] | None = Field(
+        default=None, description="Additional data (e.g., partial results)"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -322,7 +324,7 @@ class PipeLineResult(BaseModel):
     completed_at: datetime | None = Field(default=None)
 
     # Full state (optional, for debugging)
-    full_state: dict | None = Field(
+    full_state: dict[str, object] | None = Field(
         default=None, description="Complete pipeline state (for debugging)"
     )
 
