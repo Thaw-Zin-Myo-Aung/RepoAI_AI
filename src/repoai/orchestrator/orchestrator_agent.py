@@ -36,7 +36,8 @@ from repoai.models import (
 )
 from repoai.utils.logger import get_logger
 
-from .models import PipelineStage, PipelineState, PipelineStatus
+from .models import OrchestratorDecision, PipelineStage, PipelineState, PipelineStatus
+from .prompts import ORCHESTRATOR_SYSTEM_PROMPT, USER_INTENT_INSTRUCTIONS
 
 logger = get_logger(__name__)
 
@@ -438,3 +439,73 @@ Focus on:
         self.state.record_stage_time(PipelineStage.NARRATION, duration_ms)
 
         logger.info(f"PR Narration completed: '{pr_description.title}', time={duration_ms:.0f}ms")
+
+    async def _interpret_user_intent(
+        self, user_response: str, plan_summary: str
+    ) -> OrchestratorDecision:
+        """
+        Use LLM to interpret user's response to plan confirmation.
+
+        Args:
+            user_response: User's natural language response
+            plan_summary: Summary of the refactoring plan
+
+        Returns:
+            OrchestratorDecision with action, reasoning, and confidence
+
+        Example:
+            decision = await orchestrator._interpret_user_intent(
+                "yes but use Redis instead of database",
+                plan_summary
+            )
+            if decision.action == "modify":
+                print(decision.modifications)
+        """
+        logger.info(f"Interpreting user intent: '{user_response[:50]}...'")
+
+        # Build prompt for LLM
+        prompt = f"""**Refactor Plan Summary:**
+{plan_summary}
+
+**User Response:**
+"{user_response}"
+
+{USER_INTENT_INSTRUCTIONS}
+
+Analyze the user's response and determine their intent. Output a valid OrchestratorDecision."""
+
+        try:
+            # Use ORCHESTRATOR role for meta-decisions
+            result = await self.adapter.run_json_async(
+                role=ModelRole.ORCHESTRATOR,
+                schema=OrchestratorDecision,
+                messages=[{"content": f"{ORCHESTRATOR_SYSTEM_PROMPT}\n\n{prompt}"}],
+                temperature=0.2,
+                max_output_tokens=1024,
+                use_fallback=True,
+            )
+
+            logger.info(
+                f"User intent interpreted: action={result.action}, "
+                f"confidence={result.confidence:.2f}"
+            )
+
+            if result.confidence < 0.5:
+                logger.warning(
+                    f"Low confidence decision ({result.confidence:.2f}): {result.reasoning}"
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to interpret user intent: {e}", exc_info=True)
+
+            # Fallback: return clarify decision
+            return OrchestratorDecision(
+                action="clarify",
+                reasoning=f"Failed to parse user response due to error: {str(e)}",
+                confidence=0.0,
+                modifications=None,
+                next_step="ask_user_to_rephrase",
+                estimated_success_probability=None,
+            )
