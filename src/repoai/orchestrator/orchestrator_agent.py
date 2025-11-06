@@ -365,7 +365,9 @@ Focus on:
         )
 
         code_changes, metadata = await run_transformer_agent(
-            self.state.plan, transformer_deps, self.adapter  # type: ignore
+            self.state.plan,
+            transformer_deps,
+            self.adapter,  # type: ignore
         )
 
         self.state.code_changes = code_changes
