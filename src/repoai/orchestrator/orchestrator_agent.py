@@ -37,7 +37,11 @@ from repoai.models import (
 from repoai.utils.logger import get_logger
 
 from .models import OrchestratorDecision, PipelineStage, PipelineState, PipelineStatus
-from .prompts import ORCHESTRATOR_SYSTEM_PROMPT, USER_INTENT_INSTRUCTIONS
+from .prompts import (
+    ORCHESTRATOR_SYSTEM_PROMPT,
+    RETRY_STRATEGY_INSTRUCTIONS,
+    USER_INTENT_INSTRUCTIONS,
+)
 
 logger = get_logger(__name__)
 
@@ -274,23 +278,73 @@ class OrchestratorAgent:
                 f"✗ Validation failed: {len(validation_result.failed_checks)} checks failed"
             )
 
-            # Check if we can retry
+            # Check if auto-fix is enabled
             if not self.deps.auto_fix_enabled:
                 logger.info("Auto-fix disabled, stopping validation")
                 break
 
+            # Check retry limit
             if not self.state.can_retry:
                 logger.warning(
                     f"Max retries ({self.state.max_retries}) reached, stopping validation"
                 )
                 break
 
-            # Attempt intelligent fix
-            logger.info(f"Attempting intelligent fix (retry {self.state.retry_count + 1})...")
-            self.state.retry_count += 1
-            self.state.status = PipelineStatus.RETRYING
+            # Use LLM to decide retry strategy
+            logger.info(
+                f"Analyzing errors for retry decision (attempt {self.state.retry_count + 1})..."
+            )
+            retry_decision = await self._decide_retry_strategy(validation_result)
 
-            await self._attempt_fix(validation_result)
+            # Handle retry decision
+            if retry_decision.action == "retry":
+                logger.info(
+                    f"LLM decision: RETRY (confidence={retry_decision.confidence:.2f}, "
+                    f"success_prob={retry_decision.estimated_success_probability or 0:.2f})"
+                )
+                logger.info(f"Reasoning: {retry_decision.reasoning}")
+
+                self.state.retry_count += 1
+                self.state.status = PipelineStatus.RETRYING
+
+                # Apply fix with optional modifications from LLM
+                await self._attempt_fix(validation_result, retry_decision.modifications)
+
+            elif retry_decision.action == "modify":
+                logger.info(
+                    f"LLM decision: MODIFY plan (confidence={retry_decision.confidence:.2f})"
+                )
+                logger.info(f"Reasoning: {retry_decision.reasoning}")
+
+                if retry_decision.modifications:
+                    logger.info(f"Modifications: {retry_decision.modifications[:200]}...")
+                    # TODO: Implement plan modification and re-run from planning stage
+                    # For now, treat as abort
+                    logger.warning("Plan modification not yet implemented, stopping validation")
+                break
+
+            elif retry_decision.action == "abort":
+                logger.warning(f"LLM decision: ABORT (confidence={retry_decision.confidence:.2f})")
+                logger.warning(f"Reasoning: {retry_decision.reasoning}")
+                break
+
+            elif retry_decision.action == "escalate":
+                logger.warning(
+                    f"LLM decision: ESCALATE (confidence={retry_decision.confidence:.2f})"
+                )
+                logger.warning(f"Reasoning: {retry_decision.reasoning}")
+                # Mark for human review
+                self.state.add_warning(
+                    f"Escalated: {retry_decision.reasoning}. Human review recommended."
+                )
+                break
+
+            else:
+                # Unexpected action (skip, approve, clarify) - treat as abort
+                logger.warning(
+                    f"Unexpected retry action '{retry_decision.action}', stopping validation"
+                )
+                break
 
         duration_ms = (time.time() - stage_start) * 1000
         self.state.record_stage_time(PipelineStage.VALIDATION, duration_ms)
@@ -301,7 +355,9 @@ class OrchestratorAgent:
             f"time={duration_ms:.0f}ms"
         )
 
-    async def _attempt_fix(self, validation_result: ValidationResult) -> None:
+    async def _attempt_fix(
+        self, validation_result: ValidationResult, llm_modifications: str | None = None
+    ) -> None:
         """
         Attempt to fix validation errors using LLM analysis.
 
@@ -310,13 +366,20 @@ class OrchestratorAgent:
 
         Args:
             validation_result: Validation result with errors
+            llm_modifications: Optional modification instructions from orchestrator LLM decision
         """
         logger.info("Analyzing validation errors with LLM...")
 
-        # Build error analysis prompt
-        error_summary = self._build_error_summary(validation_result)
+        # If orchestrator provided specific modifications, use those
+        if llm_modifications:
+            logger.info(f"Using orchestrator-provided modifications: {llm_modifications[:200]}...")
+            fix_instructions = llm_modifications
+        else:
+            # Otherwise, analyze errors with PLANNER model
+            # Build error analysis prompt
+            error_summary = self._build_error_summary(validation_result)
 
-        analysis_prompt = f"""You are analyzing validation errors in generated Java code.
+            analysis_prompt = f"""You are analyzing validation errors in generated Java code.
 
 **Validation Issues:**
 {error_summary}
@@ -341,16 +404,16 @@ Focus on:
 - Spring annotation problems
 """
 
-        # Use PLANNER role for intelligent analysis
-        fix_instructions = await self.adapter.run_raw_async(
-            role=ModelRole.PLANNER,
-            messages=[{"content": analysis_prompt}],
-            temperature=0.3,
-            max_output_tokens=2048,
-        )
+            # Use PLANNER role for intelligent analysis
+            fix_instructions = await self.adapter.run_raw_async(
+                role=ModelRole.PLANNER,
+                messages=[{"content": analysis_prompt}],
+                temperature=0.3,
+                max_output_tokens=2048,
+            )
 
-        logger.info(f"LLM analysis complete: {len(fix_instructions)} chars")
-        logger.debug(f"Fix instructions: {fix_instructions[:500]}...")
+            logger.info(f"LLM analysis complete: {len(fix_instructions)} chars")
+            logger.debug(f"Fix instructions: {fix_instructions[:500]}...")
 
         # Re-run Transformer with updated instructions
         # (In practice, you'd modify the plan or add context to transformer_deps)
@@ -508,4 +571,92 @@ Analyze the user's response and determine their intent. Output a valid Orchestra
                 modifications=None,
                 next_step="ask_user_to_rephrase",
                 estimated_success_probability=None,
+            )
+
+    async def _decide_retry_strategy(
+        self, validation_result: ValidationResult
+    ) -> OrchestratorDecision:
+        """
+        Use LLM to decide retry strategy for validation failures.
+
+        Args:
+            validation_result: Validation result with errors
+
+        Returns:
+            OrchestratorDecision with retry action and strategy
+
+        Example:
+            decision = await orchestrator._decide_retry_strategy(validation_result)
+            if decision.action == "retry":
+                print(f"Retry with {decision.estimated_success_probability:.0%} success chance")
+            elif decision.action == "abort":
+                print(f"Aborting: {decision.reasoning}")
+        """
+        logger.info("Analyzing validation errors for retry decision...")
+
+        # Build error summary
+        error_summary = self._build_error_summary(validation_result)
+
+        # Build context about retry history
+        retry_context = f"""**Retry Context:**
+- Current attempt: {self.state.retry_count + 1}/{self.state.max_retries}
+- Previous attempts: {self.state.retry_count}
+- Validation passed: {validation_result.passed}
+- Failed checks: {len(validation_result.failed_checks)}
+"""
+
+        # Build prompt for LLM
+        prompt = f"""**Validation Errors:**
+{error_summary}
+
+{retry_context}
+
+**Original Plan:**
+- Intent: {self.state.job_spec.intent if self.state.job_spec else 'N/A'}
+- Target packages: {len(self.state.job_spec.scope.target_packages) if self.state.job_spec else 0}
+
+**Pipeline State:**
+- Stage: {self.state.stage.value}
+- Status: {self.state.status.value}
+
+{RETRY_STRATEGY_INSTRUCTIONS}
+
+Analyze the validation errors and decide the best retry strategy. Output a valid OrchestratorDecision."""
+
+        try:
+            # Use ORCHESTRATOR role for meta-decisions
+            result = await self.adapter.run_json_async(
+                role=ModelRole.ORCHESTRATOR,
+                schema=OrchestratorDecision,
+                messages=[{"content": f"{ORCHESTRATOR_SYSTEM_PROMPT}\n\n{prompt}"}],
+                temperature=0.2,
+                max_output_tokens=1024,
+                use_fallback=True,
+            )
+
+            logger.info(
+                f"Retry decision: action={result.action}, "
+                f"confidence={result.confidence:.2f}, "
+                f"success_prob={result.estimated_success_probability or 0:.2f}"
+            )
+
+            if result.estimated_success_probability and result.estimated_success_probability < 0.3:
+                logger.warning(
+                    f"Low success probability ({result.estimated_success_probability:.2f}) "
+                    f"for {result.action} action"
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to decide retry strategy: {e}", exc_info=True)
+
+            # Fallback: abort on error
+            return OrchestratorDecision(
+                action="abort",
+                reasoning=f"Failed to analyze validation errors due to error: {str(e)}",
+                confidence=0.5,
+                modifications=None,
+                next_step="report_analysis_failure",
+                estimated_success_probability=0.0,
             )
