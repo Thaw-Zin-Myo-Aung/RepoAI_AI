@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from repoai.models import (
     CodeChanges,
     JobSpec,
-    PipelineState,
     RefactorPlan,
     ValidationResult,
 )
+from repoai.orchestrator.models import PipelineState
 
 
 # Dependencies for the Intake Agent

@@ -9,7 +9,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import CodeChanges, JobSpec, PRDescription, RefactorPlan, ValidationResult
+from ..models import CodeChanges, JobSpec, PRDescription, RefactorPlan, ValidationResult
 
 
 class PipelineStage(str, Enum):

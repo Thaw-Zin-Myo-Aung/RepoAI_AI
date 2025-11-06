@@ -7,6 +7,7 @@ Each agent receives a dependencies object with all required data and services.
 
 from .base import (
     IntakeDependencies,
+    OrchestratorDependencies,
     PlannerDependencies,
     PRNarratorDependencies,
     TransformerDependencies,
@@ -19,4 +20,5 @@ __all__ = [
     "TransformerDependencies",
     "ValidatorDependencies",
     "PRNarratorDependencies",
+    "OrchestratorDependencies",
 ]
