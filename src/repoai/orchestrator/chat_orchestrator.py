@@ -197,10 +197,13 @@ class ChatOrchestrator(OrchestratorAgent):
         )
 
         # Run Planner Agent
+        if not self.state.job_spec:
+            raise RuntimeError("JobSpec not available - run Intake stage first")
+
         plan, metadata = await run_planner_agent(
             self.state.job_spec,
             planner_deps,
-            self.adapter,  # type: ignore
+            self.adapter,
         )
 
         self.state.plan = plan
