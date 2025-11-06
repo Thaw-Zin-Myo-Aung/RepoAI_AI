@@ -41,6 +41,75 @@ class PipelineStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class OrchestratorDecision(BaseModel):
+    """
+    Decision made by LLM orchestrator for meta-level pipeline coordination.
+
+    Used for intelligent decision-making about:
+    - User intent interpretation (approve/modify/clarify)
+    - Retry strategies (retry/skip/abort/escalate)
+    - Pipeline flow control
+
+    Example:
+        decision = OrchestratorDecision(
+            action="retry",
+            reasoning="Simple import error that can be fixed automatically",
+            confidence=0.95,
+            modifications="Add missing import for JwtUtils"
+        )
+    """
+
+    action: str = Field(
+        description="""Action to take. Valid values:
+        - approve: Proceed with current plan/code
+        - modify: Regenerate with modifications
+        - retry: Retry validation with fixes
+        - skip: Skip validation and proceed
+        - abort: Stop pipeline execution
+        - clarify: Ask user for clarification
+        - escalate: Need human review
+        """
+    )
+
+    reasoning: str = Field(description="Clear explanation of why this decision was made")
+
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence in this decision (0.0-1.0). Low confidence may trigger human review.",
+    )
+
+    modifications: str | None = Field(
+        default=None,
+        description="Specific instructions for modifications (required if action=modify or action=retry)",
+    )
+
+    next_step: str | None = Field(
+        default=None,
+        description="Next stage to execute (for dynamic pipeline control)",
+    )
+
+    estimated_success_probability: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Estimated probability of success if action is taken",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "action": "retry",
+                "reasoning": "Simple import error detected. Previous retry added JWT dependency but missed the import statement. High confidence this can be resolved automatically.",
+                "confidence": 0.92,
+                "modifications": "Add import statement: import com.example.auth.JwtUtils",
+                "next_step": None,
+                "estimated_success_probability": 0.88,
+            }
+        }
+    )
+
+
 @dataclass
 class PipelineState:
     """

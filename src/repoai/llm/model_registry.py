@@ -18,6 +18,7 @@ class ModelSpec:
 
 
 ENV_KEYS: dict[ModelRole, str] = {
+    ModelRole.ORCHESTRATOR: "MODEL_ROUTE_ORCHESTRATOR",
     ModelRole.INTAKE: "MODEL_ROUTE_INTAKE",
     ModelRole.PLANNER: "MODEL_ROUTE_PLANNER",
     ModelRole.PR_NARRATOR: "MODEL_ROUTE_PR",
@@ -39,36 +40,44 @@ def _infer_provider(model_id: str) -> str:
 
 def _default_models_for(role: ModelRole) -> list[str]:
     """Default Gemini models to fallback when env is not set."""
+    if role is ModelRole.ORCHESTRATOR:
+        # Fast reasoning for meta-decisions (retry/approve/modify)
+        return [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash-exp",
+            "gemini-2.0-flash",
+        ]
+
     if role is ModelRole.INTAKE:
         # Fast reasoning for user prompts
         return [
-            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-2.5-flash",
             "gemini-2.0-flash-exp",
-            "gemini-1.5-flash-002",
+            "gemini-2.0-flash",
         ]
 
     if role is ModelRole.PLANNER:
         # Reasoning and planning
         return [
-            "gemini-2.0-flash-thinking-exp-01-21",
-            "gemini-exp-1206",
-            "gemini-2.0-flash-exp",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
         ]
 
     if role is ModelRole.PR_NARRATOR:
         # Natural Language Processing for PR summaries
         return [
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash-002",
-            "gemini-2.0-flash-thinking-exp-01-21",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash-lite",
         ]
 
     if role is ModelRole.CODER:
         # Code-focused models for refactoring and completions
         return [
-            "gemini-exp-1206",
-            "gemini-2.0-flash-thinking-exp-01-21",
-            "gemini-2.0-flash-exp",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
         ]
 
     if role is ModelRole.EMBEDDING:
@@ -100,6 +109,8 @@ def load_defaults_from_env() -> dict[ModelRole, list[ModelSpec]]:
                 max_tokens = 8192  # Code generation needs more tokens
             elif role in (ModelRole.PLANNER, ModelRole.PR_NARRATOR):
                 max_tokens = 4096
+            elif role in (ModelRole.ORCHESTRATOR,):
+                max_tokens = 1024  # Orchestrator decisions are concise
             else:
                 max_tokens = 2048
 
@@ -107,8 +118,12 @@ def load_defaults_from_env() -> dict[ModelRole, list[ModelSpec]]:
                 ModelSpec(
                     provider=_infer_provider(model_id),
                     model_id=model_id,
-                    temperature=0.2 if role in (ModelRole.CODER,) else 0.3,
-                    json_mode=True if role in (ModelRole.PLANNER, ModelRole.INTAKE) else False,
+                    temperature=0.2 if role in (ModelRole.CODER, ModelRole.ORCHESTRATOR) else 0.3,
+                    json_mode=(
+                        True
+                        if role in (ModelRole.PLANNER, ModelRole.INTAKE, ModelRole.ORCHESTRATOR)
+                        else False
+                    ),
                     max_output_tokens=max_tokens,
                 )
             )
