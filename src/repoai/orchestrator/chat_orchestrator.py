@@ -10,10 +10,10 @@ Extends OrchestratorAgent with user interaction capabilities:
 Example:
     def send_msg(msg: str):
         websocket.send(msg)
-    
+
     def get_input(prompt: str) -> str:
         return websocket.receive()
-    
+
     deps = OrchestratorDependencies(
         user_id="user_123",
         session_id="session_456",
@@ -21,7 +21,7 @@ Example:
         send_message=send_msg,
         get_user_input=get_input
     )
-    
+
     chat_orchestrator = ChatOrchestrator(deps)
     result = await chat_orchestrator.run("Add JWT authentication")
 """
@@ -198,7 +198,9 @@ class ChatOrchestrator(OrchestratorAgent):
 
         # Run Planner Agent
         plan, metadata = await run_planner_agent(
-            self.state.job_spec, planner_deps, self.adapter  # type: ignore
+            self.state.job_spec,
+            planner_deps,
+            self.adapter,  # type: ignore
         )
 
         self.state.plan = plan
