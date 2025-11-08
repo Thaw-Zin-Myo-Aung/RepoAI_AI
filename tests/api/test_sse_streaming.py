@@ -49,9 +49,10 @@ def test_sse_with_progress():
 
     try:
         with requests.get(
-            f"{BASE_URL}{data['sse_url']}", stream=True, timeout=60  # 60 second timeout
+            f"{BASE_URL}{data['sse_url']}",
+            stream=True,
+            timeout=60,  # 60 second timeout
         ) as sse_response:
-
             if sse_response.status_code != 200:
                 print(f"❌ SSE connection failed: {sse_response.status_code}")
                 return

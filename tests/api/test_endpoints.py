@@ -187,7 +187,6 @@ def test_sse_stream(session_id: str, duration: int = 10) -> bool:
         with requests.get(
             f"{BASE_URL}/api/refactor/{session_id}/sse", stream=True, timeout=duration + 5
         ) as response:
-
             if response.status_code != 200:
                 print(f"❌ SSE stream failed with status: {response.status_code}")
                 return False
