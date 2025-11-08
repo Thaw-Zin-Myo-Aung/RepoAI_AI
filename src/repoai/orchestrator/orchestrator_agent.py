@@ -90,6 +90,19 @@ class OrchestratorAgent:
             f"user={self.state.user_id}"
         )
 
+    def _send_progress(self, message: str) -> None:
+        """
+        Send progress update via callback if configured.
+
+        Args:
+            message: Progress message to send
+        """
+        if self.deps.enable_progress_updates and self.deps.send_message:
+            try:
+                self.deps.send_message(message)
+            except Exception as e:
+                logger.warning(f"Failed to send progress update: {e}")
+
     async def run(self, user_prompt: str) -> PipelineState:
         """
         Execute the complete refactoring pipeline.
@@ -110,27 +123,53 @@ class OrchestratorAgent:
         self.state.start_time = time.time()
 
         logger.info(f"Starting pipeline: {user_prompt[:100]}...")
+        self._send_progress(f"🚀 Starting pipeline: {user_prompt[:80]}...")
 
         try:
             # Stage 1: Intake
+            self._send_progress("📥 Stage 1/5: Analyzing refactoring request...")
             await self._run_intake_stage()
+            self._send_progress(
+                f"✅ Intake complete: {self.state.job_spec.intent if self.state.job_spec else 'processed'}"
+            )
 
             # Stage 2: Planning
+            self._send_progress("📋 Stage 2/5: Creating refactoring plan...")
             await self._run_planning_stage()
+            self._send_progress(
+                f"✅ Plan created: {self.state.plan.total_steps if self.state.plan else 0} steps"
+            )
 
             # Stage 3: Transformation
+            self._send_progress("🔨 Stage 3/5: Generating code changes...")
             await self._run_transformation_stage()
+            self._send_progress(
+                f"✅ Code generated: {self.state.code_changes.files_modified if self.state.code_changes else 0} files modified"
+            )
 
             # Stage 4: Validation (with intelligent retry)
+            self._send_progress("🔍 Stage 4/5: Validating code changes...")
             await self._run_validation_stage()
+            validation_status = (
+                "passed"
+                if self.state.validation_result and self.state.validation_result.passed
+                else "completed"
+            )
+            self._send_progress(f"✅ Validation {validation_status}")
 
             # Stage 5: PR Narration
+            self._send_progress("📝 Stage 5/5: Creating PR description...")
             await self._run_narration_stage()
+            self._send_progress("✅ PR description ready")
 
             # Mark as complete
             self.state.stage = PipelineStage.COMPLETE
             self.state.status = PipelineStatus.COMPLETED
             self.state.end_time = time.time()
+
+            self._send_progress(
+                f"🎉 Pipeline completed successfully! ({self.state.elapsed_time_ms/1000:.1f}s)"
+            )
 
             logger.info(
                 f"Pipeline completed successfully: "
@@ -144,6 +183,7 @@ class OrchestratorAgent:
             self.state.add_error(f"Pipeline failed: {str(e)}")
             self.state.end_time = time.time()
 
+            self._send_progress(f"❌ Pipeline failed: {str(e)[:100]}")
             logger.error(f"Pipeline failed: {e}", exc_info=True)
 
         return self.state

@@ -2194,7 +2194,9 @@ dependencies = [
     { name = "javalang" },
     { name = "pydantic-ai" },
     { name = "rich" },
+    { name = "sse-starlette" },
     { name = "typer" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -2204,6 +2206,7 @@ dev = [
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
+    { name = "requests" },
     { name = "ruff" },
 ]
 
@@ -2215,7 +2218,9 @@ requires-dist = [
     { name = "javalang", specifier = ">=0.13.0" },
     { name = "pydantic-ai", specifier = ">=1.1.0" },
     { name = "rich", specifier = ">=14.2.0" },
+    { name = "sse-starlette", specifier = ">=2.2.1" },
     { name = "typer", specifier = ">=0.19.2" },
+    { name = "uvicorn", specifier = ">=0.34.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -2225,6 +2230,7 @@ dev = [
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "pre-commit", specifier = ">=4.3.0" },
     { name = "pytest", specifier = ">=8.4.2" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "ruff", specifier = "==0.6.9" },
 ]
 

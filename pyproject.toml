@@ -14,7 +14,9 @@ dependencies = [
     "javalang>=0.13.0",
     "pydantic-ai>=1.1.0",
     "rich>=14.2.0",
+    "sse-starlette>=2.2.1",
     "typer>=0.19.2",
+    "uvicorn>=0.34.0",
 ]
 
 [project.scripts]
@@ -36,6 +38,7 @@ dev = [
     "mypy>=1.18.2",
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
+    "requests>=2.32.0",
     "ruff==0.6.9",
 ]
 
