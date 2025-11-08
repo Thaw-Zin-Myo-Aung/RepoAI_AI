@@ -16,6 +16,7 @@ from fastapi.websockets import WebSocketState
 
 from repoai.dependencies import OrchestratorDependencies
 from repoai.orchestrator import ChatOrchestrator, PipelineStage, PipelineState, PipelineStatus
+from repoai.utils.git_utils import cleanup_repository, clone_repository
 from repoai.utils.logger import get_logger
 
 from ..models import UserConfirmationRequest
@@ -90,6 +91,8 @@ async def websocket_refactor(websocket: WebSocket, session_id: str) -> None:
             user_id=user_id or "anonymous",
             user_prompt=user_prompt,
             repository_url=github_creds.get("repository_url"),
+            access_token=github_creds.get("access_token", "mock_token_for_testing"),
+            branch=github_creds.get("branch", "main"),
             response_queue=response_queue,
         )
 
@@ -113,6 +116,8 @@ async def run_interactive_pipeline(
     user_id: str,
     user_prompt: str,
     repository_url: str | None,
+    access_token: str,
+    branch: str,
     response_queue: asyncio.Queue[str],
 ) -> None:
     """
@@ -179,14 +184,30 @@ async def run_interactive_pipeline(
     # Start listener for user responses
     asyncio.create_task(listen_for_responses(websocket, response_queue))
 
+    repository_path = None
     try:
-        # TODO: Clone GitHub repository for validation
-        # - Extract access_token, repository_url, branch from github_credentials
-        # - Clone repository to temporary directory
-        # - Set repository_path in OrchestratorDependencies
-        # - This enables Maven/Gradle validation during pipeline execution
-        # - Clean up cloned repo after pipeline completion
-        repository_path = None  # Will be set after implementing clone logic
+        # Clone GitHub repository for validation
+        if repository_url:
+            try:
+                logger.info(f"Cloning repository: {repository_url}")
+                repo_path = clone_repository(
+                    repo_url=repository_url,
+                    access_token=access_token,
+                    branch=branch,
+                )
+                repository_path = str(repo_path)
+                logger.info(f"Repository cloned to: {repository_path}")
+
+                # Send progress update about successful clone
+                send_message(f"✅ Repository cloned: {repository_url}")
+
+            except Exception as clone_exc:
+                logger.error(f"Repository clone failed: {clone_exc}")
+                send_message(f"❌ Clone failed: {clone_exc}")
+                await websocket.send_json(
+                    {"type": "error", "message": f"Failed to clone repository: {clone_exc}"}
+                )
+                return
 
         # Configure orchestrator with WebSocket callbacks
         deps = OrchestratorDependencies(
@@ -227,6 +248,12 @@ async def run_interactive_pipeline(
     except Exception as e:
         logger.error(f"Interactive pipeline failed: {e}", exc_info=True)
         await websocket.send_json({"type": "error", "message": str(e)})
+
+    finally:
+        # Clean up cloned repository
+        if repository_path:
+            logger.info(f"Cleaning up repository: {repository_path}")
+            cleanup_repository(repository_path)
 
 
 async def listen_for_responses(websocket: WebSocket, response_queue: asyncio.Queue[str]) -> None:

@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from repoai.dependencies import OrchestratorDependencies
 from repoai.orchestrator import OrchestratorAgent, PipelineStage, PipelineState, PipelineStatus
+from repoai.utils.git_utils import cleanup_repository, clone_repository
 from repoai.utils.logger import get_logger
 
 from ..models import (
@@ -222,20 +223,54 @@ async def run_pipeline(
 
     Sends progress updates to queue for SSE streaming.
     """
+    repository_path = None
     try:
         logger.info(f"Pipeline started: {session_id}")
 
         # Get state
         state = active_sessions[session_id]
 
-        # TODO: Clone GitHub repository for validation
-        # - Use request.github_credentials.access_token to authenticate
-        # - Clone request.github_credentials.repository_url
-        # - Checkout request.github_credentials.branch
-        # - Set repository_path in OrchestratorDependencies
-        # - This enables Maven/Gradle validation during pipeline execution
-        # - Clean up cloned repo after pipeline completion
-        repository_path = None  # Will be set after implementing clone logic
+        # Clone GitHub repository for validation
+        try:
+            logger.info(f"Cloning repository: {request.github_credentials.repository_url}")
+            repo_path = clone_repository(
+                repo_url=request.github_credentials.repository_url,
+                access_token=request.github_credentials.access_token,
+                branch=request.github_credentials.branch,
+            )
+            repository_path = str(repo_path)
+            logger.info(f"Repository cloned to: {repository_path}")
+
+            # Send progress update about successful clone
+            await progress_queue.put(
+                ProgressUpdate(
+                    session_id=session_id,
+                    stage=PipelineStage.IDLE,
+                    status="in_progress",
+                    progress=0.05,
+                    message=f"✅ Repository cloned: {request.github_credentials.repository_url}",
+                    timestamp=datetime.now(),
+                )
+            )
+
+        except Exception as clone_exc:
+            logger.error(f"Repository clone failed: {clone_exc}")
+            state.errors.append(f"Failed to clone repository: {clone_exc}")
+            state.status = PipelineStatus.FAILED
+
+            # Send error update
+            await progress_queue.put(
+                ProgressUpdate(
+                    session_id=session_id,
+                    stage=state.stage,
+                    status="failed",
+                    progress=0.0,
+                    message=f"❌ Clone failed: {clone_exc}",
+                    timestamp=datetime.now(),
+                )
+            )
+            await progress_queue.put(None)  # Signal completion
+            return
 
         # Configure orchestrator dependencies
         deps = OrchestratorDependencies(
@@ -321,6 +356,12 @@ async def run_pipeline(
 
         # Signal completion
         await progress_queue.put(None)
+
+    finally:
+        # Clean up cloned repository
+        if repository_path:
+            logger.info(f"Cleaning up repository: {repository_path}")
+            cleanup_repository(repository_path)
 
 
 def _send_progress_update(
