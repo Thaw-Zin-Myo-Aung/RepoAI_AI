@@ -54,12 +54,13 @@ Example Usage:
 """
 
 # from .chat_orchestrator import ChatOrchestrator
+from .chat_orchestrator import ChatOrchestrator
 from .models import PipelineStage, PipelineState, PipelineStatus
 from .orchestrator_agent import OrchestratorAgent
 
 __all__ = [
     "OrchestratorAgent",
-    # "ChatOrchestrator",
+    "ChatOrchestrator",
     "PipelineStage",
     "PipelineState",
     "PipelineStatus",
