@@ -21,6 +21,7 @@ from repoai.agents import (
     run_transformer_agent,
     run_validator_agent,
 )
+from repoai.agents.transformer_agent import transform_with_streaming
 from repoai.dependencies import (
     IntakeDependencies,
     OrchestratorDependencies,
@@ -30,10 +31,13 @@ from repoai.dependencies import (
 )
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import (
+    CodeChange,
+    CodeChanges,
     FileChange,
     PRDescription,
     ValidationResult,
 )
+from repoai.utils.file_operations import apply_code_change, create_backup_directory
 from repoai.utils.logger import get_logger
 
 from .models import OrchestratorDecision, PipelineStage, PipelineState, PipelineStatus
@@ -281,6 +285,110 @@ class OrchestratorAgent:
             f"+{code_changes.lines_added}/-{code_changes.lines_removed} lines, "
             f"time={duration_ms:.0f}ms"
         )
+
+    async def _run_transformation_stage_streaming(self) -> None:
+        """
+        Run Transformer Agent with streaming and real-time file application.
+
+        This version streams code changes as they're generated and applies them
+        immediately to the cloned repository.
+        """
+        if not self.state.plan:
+            raise RuntimeError("RefactorPlan not available - run Planning stage first")
+
+        if not self.deps.repository_path:
+            raise RuntimeError("Repository path not set - clone repository first")
+
+        self.state.stage = PipelineStage.TRANSFORMATION
+        stage_start = time.time()
+
+        logger.info("Running Transformer Agent (streaming mode)...")
+
+        # Create backup before applying changes
+        from pathlib import Path
+
+        repo_path = Path(self.deps.repository_path)
+        backup_dir = await create_backup_directory(repo_path)
+        logger.info(f"Created backup: {backup_dir}")
+
+        # Prepare dependencies
+        transformer_deps = TransformerDependencies(
+            plan=self.state.plan,
+            repository_path=self.deps.repository_path,
+            repository_url=self.deps.repository_url,
+            write_to_disk=True,
+            output_path=self.deps.output_path,
+        )
+
+        # Track changes and progress
+        all_changes: list[CodeChange] = []
+        files_applied = 0
+        total_lines_added = 0
+        total_lines_removed = 0
+
+        try:
+            # Stream code changes and apply immediately
+            async for code_change, _metadata in transform_with_streaming(
+                self.state.plan, transformer_deps, self.adapter
+            ):
+                # Apply file immediately to repository
+                try:
+                    await apply_code_change(code_change, repo_path, backup_dir)
+                    files_applied += 1
+
+                    # Track metrics
+                    total_lines_added += code_change.lines_added
+                    total_lines_removed += code_change.lines_removed
+
+                    # Collect change
+                    all_changes.append(code_change)
+
+                    # Send progress update
+                    self._send_progress(
+                        f"✓ Generated & applied: {code_change.file_path} "
+                        f"(+{code_change.lines_added}/-{code_change.lines_removed}) "
+                        f"[{files_applied} files]"
+                    )
+
+                    logger.info(
+                        f"Applied {code_change.change_type}: {code_change.file_path} "
+                        f"({files_applied}/{len(all_changes) + 1})"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Failed to apply {code_change.file_path}: {e}")
+                    # Continue with other files
+                    self._send_progress(f"⚠️  Failed to apply: {code_change.file_path}")
+
+            # Create CodeChanges object from collected changes
+            code_changes = CodeChanges(
+                plan_id=self.state.plan.plan_id,
+                changes=all_changes,
+                files_modified=len(all_changes),
+                files_created=sum(1 for c in all_changes if c.change_type == "created"),
+                files_deleted=sum(1 for c in all_changes if c.change_type == "deleted"),
+                lines_added=total_lines_added,
+                lines_removed=total_lines_removed,
+            )
+
+            self.state.code_changes = code_changes
+            duration_ms = (time.time() - stage_start) * 1000
+            self.state.record_stage_time(PipelineStage.TRANSFORMATION, duration_ms)
+
+            logger.info(
+                f"Streaming transformation completed: {files_applied} files applied, "
+                f"+{total_lines_added}/-{total_lines_removed} lines, "
+                f"time={duration_ms:.0f}ms"
+            )
+
+        except Exception as e:
+            logger.error(f"Transformation streaming failed: {e}")
+            # Restore from backup on failure
+            from repoai.utils.file_operations import restore_from_backup
+
+            logger.info("Restoring from backup due to error...")
+            await restore_from_backup(backup_dir, repo_path)
+            raise
 
     async def _run_validation_stage(self) -> None:
         """Run Validator Agent with intelligent retry on failures."""
