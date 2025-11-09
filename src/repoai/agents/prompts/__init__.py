@@ -19,6 +19,8 @@ from .transformer_prompts import (
     TRANSFORMER_INSTRUCTIONS,
     TRANSFORMER_JAVA_EXAMPLES,
     TRANSFORMER_SYSTEM_PROMPT,
+    build_transformer_prompt,
+    build_transformer_prompt_streaming,
 )
 from .validator_prompts import (
     VALIDATOR_INSTRUCTIONS,
@@ -36,6 +38,8 @@ __all__ = [
     "TRANSFORMER_SYSTEM_PROMPT",
     "TRANSFORMER_INSTRUCTIONS",
     "TRANSFORMER_JAVA_EXAMPLES",
+    "build_transformer_prompt",
+    "build_transformer_prompt_streaming",
     "VALIDATOR_SYSTEM_PROMPT",
     "VALIDATOR_INSTRUCTIONS",
     "VALIDATOR_JAVA_EXAMPLES",

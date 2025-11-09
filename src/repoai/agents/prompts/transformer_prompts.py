@@ -8,6 +8,14 @@ The Transformer Agent is responsible for:
 4. Producing CodeChange objects with diffs
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from repoai.dependencies.base import TransformerDependencies
+    from repoai.models.refactor_plan import RefactorStep
+
 TRANSFORMER_SYSTEM_PROMPT = """You are an expert Java software engineer and code generator.
 
 Your role is to generate high-quality, production-ready Java code based on refactoring specifications.
@@ -734,3 +742,119 @@ public class SecurityConfig {
 9. **Extract metadata** - Imports, methods, annotations for tracking
 10. **Be production-ready** - Code should be deployable without modifications
 """
+
+
+# ============================================================================
+# Prompt Builder Functions
+# ============================================================================
+
+
+def build_transformer_prompt(
+    step: RefactorStep, dependencies: TransformerDependencies, plan_summary: str
+) -> str:
+    """
+    Build the prompt for a single transformation step (batch mode).
+
+    Args:
+        step: RefactorStep to generate code for
+        dependencies: TransformerDependencies with repository context
+        plan_summary: High-level plan summary
+
+    Returns:
+        Formatted prompt string for the LLM
+    """
+    prompt = f"""# Code Transformation Task
+
+## Refactoring Plan Summary
+{plan_summary}
+
+## Current Step
+**Description**: {step.description}
+**Action**: {step.action}
+
+## Context
+**Repository**: {dependencies.repository_url or dependencies.repository_path or 'N/A'}
+**Java Version**: {dependencies.java_version}
+
+## Files to Process
+"""
+
+    for file_path in step.target_files:
+        prompt += f"- {file_path}\n"
+
+    prompt += """
+## Instructions
+Generate the complete refactored code for the files listed above.
+For each file:
+1. Provide the full file path
+2. Generate the complete refactored code (not just snippets)
+3. Create a unified diff showing the changes
+4. Add a brief description of what changed
+
+## Expected Output Format
+Return a CodeChanges object with a list of CodeChange items.
+Each CodeChange must include:
+- file_path: Full path to the file
+- change_type: "CREATE", "MODIFY", or "DELETE"
+- old_content: Original file content (if modifying/deleting)
+- new_content: Refactored file content (if creating/modifying)
+- diff: Unified diff format
+- description: Brief explanation of changes
+"""
+
+    return prompt
+
+
+def build_transformer_prompt_streaming(
+    step: RefactorStep, dependencies: TransformerDependencies, estimated_duration: str
+) -> str:
+    """
+    Build the prompt for streaming transformation (real-time mode).
+
+    Args:
+        step: RefactorStep to generate code for
+        dependencies: TransformerDependencies with repository context
+        estimated_duration: Estimated time from plan
+
+    Returns:
+        Formatted prompt string optimized for streaming
+    """
+    prompt = f"""# Code Transformation Task (Streaming)
+
+## Current Step
+**Description**: {step.description}
+**Action**: {step.action}
+**Risk Level**: {step.risk_level}/10
+**Estimated Time**: {estimated_duration}
+
+## Context
+**Repository**: {dependencies.repository_url or dependencies.repository_path or 'N/A'}
+**Java Version**: {dependencies.java_version}
+
+## Files to Process
+"""
+
+    for file_path in step.target_files:
+        prompt += f"- {file_path}\n"
+
+    prompt += """
+## Instructions
+Generate the complete refactored code for the files listed above.
+For each file:
+1. Provide the full file path
+2. Generate the complete refactored code (not just snippets)
+3. Create a unified diff showing the changes
+4. Add a brief description of what changed
+
+## Expected Output Format
+Return a CodeChanges object with a list of CodeChange items.
+Each CodeChange must include:
+- file_path: Full path to the file
+- change_type: "CREATE", "MODIFY", or "DELETE"
+- old_content: Original file content (if modifying/deleting)
+- new_content: Refactored file content (if creating/modifying)
+- diff: Unified diff format
+- description: Brief explanation of changes
+"""
+
+    return prompt
