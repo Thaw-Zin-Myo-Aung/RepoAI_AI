@@ -630,6 +630,10 @@ Focus on:
 
         # TODO: Implement PR Narrator Agent
         # For now, create a basic PR description
+        # Type narrowing: we know code_changes is not None due to guard above
+        code_changes = self.state.code_changes
+        validation_result = self.state.validation_result
+
         pr_description = PRDescription(
             plan_id=self.state.plan.plan_id if self.state.plan else "unknown",
             title=f"feat: {self.state.job_spec.intent}" if self.state.job_spec else "Refactoring",
@@ -639,10 +643,10 @@ Focus on:
                     file_path=change.file_path,
                     description=f"{change.change_type}: +{change.lines_added}/-{change.lines_removed}",
                 )
-                for change in self.state.code_changes.changes[:10]
+                for change in code_changes.changes[:10]
             ],
-            testing_notes=f"Validation passed: {self.state.validation_result.passed}, "
-            f"Coverage: {self.state.validation_result.test_coverage * 100:.1f}%",
+            testing_notes=f"Validation passed: {validation_result.passed}, "
+            f"Coverage: {validation_result.test_coverage * 100:.1f}%",
         )
 
         self.state.pr_description = pr_description
