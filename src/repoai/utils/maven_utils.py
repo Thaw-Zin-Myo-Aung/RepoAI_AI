@@ -15,7 +15,7 @@ from repoai.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def parse_pom_xml(pom_path: Path | str) -> Any:  # type: ignore[reportReturnType]
+def parse_pom_xml(pom_path: Path | str) -> Any:
     """
     Parse a Maven pom.xml file.
 
