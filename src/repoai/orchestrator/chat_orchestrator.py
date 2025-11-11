@@ -29,14 +29,16 @@ Example:
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
-from repoai.agents import run_planner_agent
-from repoai.dependencies import OrchestratorDependencies, PlannerDependencies
 from repoai.models import RefactorPlan
 from repoai.utils.logger import get_logger
 
 from .models import PipelineStage, PipelineStatus, PipelineUpdateMessage
 from .orchestrator_agent import OrchestratorAgent
+
+if TYPE_CHECKING:
+    from repoai.dependencies import OrchestratorDependencies
 
 logger = get_logger(__name__)
 
@@ -190,6 +192,8 @@ class ChatOrchestrator(OrchestratorAgent):
         logger.info("Running Planner Agent...")
 
         # Prepare dependencies
+        from repoai.dependencies import PlannerDependencies
+
         planner_deps = PlannerDependencies(
             job_spec=self.state.job_spec,  # type: ignore
             repository_path=self.deps.repository_path,
@@ -199,6 +203,9 @@ class ChatOrchestrator(OrchestratorAgent):
         # Run Planner Agent
         if not self.state.job_spec:
             raise RuntimeError("JobSpec not available - run Intake stage first")
+
+        # Lazy import to avoid circular dependency
+        from repoai.agents.planner_agent import run_planner_agent
 
         plan, metadata = await run_planner_agent(
             self.state.job_spec,

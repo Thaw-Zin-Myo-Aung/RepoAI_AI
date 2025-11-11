@@ -17,6 +17,7 @@ import difflib
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 from pydantic_ai import Agent, RunContext
 
@@ -386,6 +387,120 @@ public @interface {class_name} {{
         # No existing context
         logger.debug(f"No existing context for {file_path}")
         return f"// File: {file_path}\n// (New file - no existing content)"
+
+    # Tool: Add Maven dependency to pom.xml
+    @agent.tool
+    def add_maven_dependency(
+        ctx: RunContext[TransformerDependencies], dependency_key: str
+    ) -> dict[str, Any]:
+        """
+        Add a Maven dependency to pom.xml when using external libraries or frameworks.
+
+        CRITICAL: Use this tool WHENEVER you add imports or annotations from external libraries!
+
+        Args:
+            dependency_key: Either a common dependency name OR "groupId:artifactId:version"
+
+        Common Dependencies (use these names):
+            - "spring-context" - For @Service, @Component, @Autowired
+            - "spring-boot-starter-web" - For Spring Boot web (@RestController, etc.)
+            - "spring-boot-starter-data-jpa" - For JPA (@Entity, @Repository)
+            - "spring-boot-starter-security" - For Spring Security
+            - "spring-boot-starter-test" - For Spring Boot testing
+            - "junit-jupiter" - For JUnit 5 (@Test, assertions)
+            - "mockito-core" - For Mockito (@Mock, @InjectMocks)
+            - "lombok" - For Lombok (@Data, @Getter, @Setter)
+            - "slf4j-api" - For SLF4J logging
+            - "logback-classic" - For Logback
+
+        Custom Format: "groupId:artifactId:version"
+            Example: "com.google.guava:guava:32.1.3-jre"
+
+        Returns:
+            Dict with success status and dependency details
+
+        Examples:
+            # Adding Spring annotation support
+            add_maven_dependency("spring-context")
+
+            # Adding Spring Boot web
+            add_maven_dependency("spring-boot-starter-web")
+
+            # Adding custom dependency
+            add_maven_dependency("com.fasterxml.jackson.core:jackson-databind:2.15.0")
+        """
+        from pathlib import Path
+
+        from repoai.utils.maven_utils import (
+            add_dependency,
+            get_common_dependencies,
+        )
+
+        repo_path = ctx.deps.repository_path
+        if not repo_path:
+            logger.warning("Repository path not set, cannot add Maven dependency")
+            return {
+                "success": False,
+                "error": "Repository path not configured",
+            }
+
+        pom_path = Path(repo_path) / "pom.xml"
+        if not pom_path.exists():
+            logger.warning(f"pom.xml not found at {pom_path}")
+            return {
+                "success": False,
+                "error": f"pom.xml not found at {pom_path}",
+            }
+
+        # Check if it's a common dependency
+        common_deps = get_common_dependencies()
+        if dependency_key in common_deps:
+            dep = common_deps[dependency_key]
+            logger.info(
+                f"Adding common dependency: {dep['groupId']}:{dep['artifactId']}:{dep['version']}"
+            )
+
+            success = add_dependency(
+                pom_path,
+                dep["groupId"],
+                dep["artifactId"],
+                dep["version"],
+                dep.get("scope"),
+            )
+
+            return {
+                "success": success,
+                "groupId": dep["groupId"],
+                "artifactId": dep["artifactId"],
+                "version": dep["version"],
+                "message": f"Added {dep['groupId']}:{dep['artifactId']}:{dep['version']}",
+            }
+
+        # Parse custom format: groupId:artifactId:version
+        try:
+            parts = dependency_key.split(":")
+            if len(parts) != 3:
+                return {
+                    "success": False,
+                    "error": "Invalid format. Use 'dependency-name' or 'groupId:artifactId:version'",
+                }
+
+            group_id, artifact_id, version = parts
+            logger.info(f"Adding custom dependency: {group_id}:{artifact_id}:{version}")
+
+            success = add_dependency(pom_path, group_id, artifact_id, version)
+
+            return {
+                "success": success,
+                "groupId": group_id,
+                "artifactId": artifact_id,
+                "version": version,
+                "message": f"Added {group_id}:{artifact_id}:{version}",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to add dependency: {e}")
+            return {"success": False, "error": str(e)}
 
     logger.info("Transformer Agent created successfully.")
     return agent

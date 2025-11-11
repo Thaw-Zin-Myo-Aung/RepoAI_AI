@@ -14,21 +14,12 @@ Handles intelligent error recovery using LLM-powered analysis.
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
-from repoai.agents import (
-    run_intake_agent,
-    run_planner_agent,
-    run_transformer_agent,
-    run_validator_agent,
-)
-from repoai.agents.transformer_agent import transform_with_streaming
-from repoai.dependencies import (
-    IntakeDependencies,
-    OrchestratorDependencies,
-    PlannerDependencies,
-    TransformerDependencies,
-    ValidatorDependencies,
-)
+if TYPE_CHECKING:
+    from repoai.dependencies import (
+        OrchestratorDependencies,
+    )
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import (
     CodeChange,
@@ -194,6 +185,9 @@ class OrchestratorAgent:
 
     async def _run_intake_stage(self) -> None:
         """Run Intake Agent to parse user request."""
+        from repoai.agents.intake_agent import run_intake_agent
+        from repoai.dependencies import IntakeDependencies
+
         self.state.stage = PipelineStage.INTAKE
         stage_start = time.time()
 
@@ -224,6 +218,9 @@ class OrchestratorAgent:
 
     async def _run_planning_stage(self) -> None:
         """Run Planner Agent to create refactor plan."""
+        from repoai.agents.planner_agent import run_planner_agent
+        from repoai.dependencies import PlannerDependencies
+
         if not self.state.job_spec:
             raise RuntimeError("JobSpec not available - run Intake stage first")
 
@@ -254,6 +251,9 @@ class OrchestratorAgent:
 
     async def _run_transformation_stage(self) -> None:
         """Run Transformer Agent to generate code."""
+        from repoai.agents.transformer_agent import run_transformer_agent
+        from repoai.dependencies import TransformerDependencies
+
         if not self.state.plan:
             raise RuntimeError("RefactorPlan not available - run Planning stage first")
 
@@ -293,6 +293,9 @@ class OrchestratorAgent:
         This version streams code changes as they're generated and applies them
         immediately to the cloned repository.
         """
+        from repoai.agents.transformer_agent import transform_with_streaming
+        from repoai.dependencies import TransformerDependencies
+
         if not self.state.plan:
             raise RuntimeError("RefactorPlan not available - run Planning stage first")
 
@@ -392,6 +395,9 @@ class OrchestratorAgent:
 
     async def _run_validation_stage(self) -> None:
         """Run Validator Agent with intelligent retry on failures."""
+        from repoai.agents.validator_agent import run_validator_agent
+        from repoai.dependencies import ValidatorDependencies
+
         if not self.state.code_changes:
             raise RuntimeError("CodeChanges not available - run Transformation stage first")
 
@@ -516,6 +522,9 @@ class OrchestratorAgent:
             validation_result: Validation result with errors
             llm_modifications: Optional modification instructions from orchestrator LLM decision
         """
+        from repoai.agents.transformer_agent import run_transformer_agent
+        from repoai.dependencies import TransformerDependencies
+
         logger.info("Analyzing validation errors with LLM...")
 
         # If orchestrator provided specific modifications, use those

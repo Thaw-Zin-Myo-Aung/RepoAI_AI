@@ -3,7 +3,7 @@ Confidence scoring models for validation and quality assessment.
 Confidence-based human review triggering.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ConfidenceMetrics(BaseModel):
@@ -56,8 +56,8 @@ class ConfidenceMetrics(BaseModel):
         else:
             return "Poor"
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "overall_confidence": 0.85,
                 "reasoning_quality": 0.90,
@@ -65,3 +65,4 @@ class ConfidenceMetrics(BaseModel):
                 "test_coverage": 0.75,
             }
         }
+    )

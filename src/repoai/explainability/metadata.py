@@ -5,7 +5,7 @@ Capture information about agent decisions for transparency and debugging.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RefactorMetadata(BaseModel):
@@ -60,8 +60,8 @@ class RefactorMetadata(BaseModel):
         default=0.0, description="Time taken to reach the decision in milliseconds"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "timestamp": "2025-01-15T10:30:00",
                 "agent_name": "PlannerAgent",
@@ -76,3 +76,4 @@ class RefactorMetadata(BaseModel):
                 "execution_time_ms": 2500.0,
             }
         }
+    )

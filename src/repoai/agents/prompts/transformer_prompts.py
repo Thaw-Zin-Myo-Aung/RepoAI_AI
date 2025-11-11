@@ -233,6 +233,135 @@ public class SecurityConfig {
 }
 ```
 
+## Maven Dependency Management
+
+**CRITICAL:** When adding annotations, imports, or using external libraries in your generated code, you MUST add the required Maven dependencies FIRST using the `add_maven_dependency` tool.
+
+### When to Add Dependencies
+
+**Always call `add_maven_dependency` before:**
+- Adding Spring annotations (`@Service`, `@Component`, `@Autowired`, `@RestController`)
+- Adding JUnit test annotations (`@Test`, `@BeforeEach`, `@AfterEach`)
+- Adding Lombok annotations (`@Data`, `@Getter`, `@Setter`, `@Builder`)
+- Adding Mockito annotations (`@Mock`, `@InjectMocks`)
+- Using any external library class in imports
+
+### Common Dependencies Available
+
+The tool provides quick access to commonly used dependencies:
+
+| Dependency Key | Use Case | Annotations/Classes |
+|---------------|----------|---------------------|
+| `spring-context` | Spring Core Framework | `@Service`, `@Component`, `@Autowired` |
+| `spring-boot-starter-web` | Spring Boot Web Apps | `@RestController`, `@RequestMapping`, `@GetMapping` |
+| `spring-boot-starter-data-jpa` | Spring Data JPA | `@Entity`, `@Repository`, `JpaRepository` |
+| `spring-boot-starter-security` | Spring Security | `@EnableWebSecurity`, `SecurityFilterChain` |
+| `junit-jupiter` | JUnit 5 Testing | `@Test`, `@BeforeEach`, `@DisplayName` |
+| `mockito-core` | Mockito Mocking | `@Mock`, `@InjectMocks`, `Mockito` |
+| `lombok` | Lombok Code Generation | `@Data`, `@Getter`, `@Builder` |
+| `slf4j-api` | SLF4J Logging | `Logger`, `LoggerFactory` |
+| `logback-classic` | Logback Logging | Runtime logging implementation |
+
+### Usage Examples
+
+**Example 1: Adding a Spring Service**
+
+When generating a Spring service class, FIRST add the spring-context dependency:
+```
+add_maven_dependency("spring-context")
+```
+
+Then generate the code:
+```java
+package com.example.service;
+
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+    // Service implementation
+}
+```
+
+**Example 2: Adding a JUnit Test**
+
+Before generating test classes, add both JUnit and Mockito dependencies:
+```
+add_maven_dependency("junit-jupiter")
+add_maven_dependency("mockito-core")
+```
+
+Then generate the test:
+```java
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+
+class UserServiceTest {
+    @Mock
+    private UserRepository userRepository;
+    
+    @Test
+    void testFindById() {
+        // Test implementation
+    }
+}
+```
+
+**Example 3: Adding Lombok**
+
+Before using Lombok annotations, add the dependency:
+```
+add_maven_dependency("lombok")
+```
+
+Then use Lombok in your code:
+```java
+import lombok.Data;
+
+@Data
+public class User {
+    private Long id;
+    private String username;
+}
+```
+
+**Example 4: Custom Dependency**
+
+For dependencies not in the common list, use groupId:artifactId:version format:
+```
+add_maven_dependency("com.google.guava:guava:32.1.3-jre")
+```
+
+### Workflow
+
+**Correct Approach:**
+1. Identify external libraries needed for the code change
+2. Call `add_maven_dependency` for each library
+3. Wait for confirmation that dependency was added
+4. Generate the code using those libraries
+
+**Incorrect Approach (DO NOT DO THIS):**
+
+❌ WRONG: Adding @Service annotation without ensuring spring-context dependency exists first.
+This will cause compilation errors when Maven tries to compile the code!
+
+### Best Practices
+
+1. **Add dependencies early**: Check for dependencies at the start of code generation
+2. **Check existing dependencies**: The tool automatically checks if a dependency already exists
+3. **Use common names**: Prefer "spring-context" over "org.springframework:spring-context:6.1.0"
+4. **One dependency per call**: Call the tool once for each distinct dependency
+5. **Test dependencies**: Remember to add both JUnit and Mockito for test classes
+
+### Error Prevention
+
+The `add_maven_dependency` tool will:
+- ✅ Automatically check if dependency already exists
+- ✅ Add to correct `<dependencies>` section in pom.xml
+- ✅ Use appropriate versions from the common dependencies catalog
+- ✅ Return success confirmation with details
+- ⚠️ Return error if pom.xml is invalid or missing
+
 ## Error Handling
 
 ### Custom Exceptions
