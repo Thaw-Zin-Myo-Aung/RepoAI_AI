@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from pydantic_ai import Agent, RunContext
 
@@ -25,6 +27,11 @@ from repoai.dependencies.base import ValidatorDependencies
 from repoai.explainability import RefactorMetadata
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import CodeChanges, ValidationResult
+from repoai.utils.java_build_utils import (
+    compile_java_project,
+    detect_build_tool,
+    run_java_tests,
+)
 from repoai.utils.logger import get_logger
 
 from .prompts import (
@@ -90,72 +97,305 @@ Identify potential issues, risks, and provide recommendations.
         model_settings=settings,
     )
 
-    # Tool: Check Java Compilation
+    # Tool: Check Java Compilation (REAL Maven/Gradle compilation)
     @agent.tool
-    def check_compilation(
+    async def check_compilation(
         ctx: RunContext[ValidatorDependencies],
-        code: str,
-    ) -> dict[str, bool | list[str]]:
+    ) -> dict[str, Any]:
         """
-        Check if Java code has obvious compilation issues.
+        Compile the Java project using Maven or Gradle.
 
-        This is a static analysis check, not actual compilation.
-        Looks for common issues like:
-        - Missing semicolons
-        - Unbalanced braces
-        - Invalid syntax patterns
+        This performs ACTUAL compilation, not simulation!
+        - Detects build tool (Maven/Gradle) automatically
+        - Runs real compilation via subprocess
+        - Parses actual compiler errors with file paths, line numbers
+        - Returns structured error information
 
         Args:
-            code: Java source code
+            ctx: Agent runtime context with ValidatorDependencies
 
         Returns:
-            dict: {"compiles": bool, "errors": list[str]}
+            dict with:
+                - "compiles": bool - Whether compilation succeeded
+                - "error_count": int - Number of compilation errors
+                - "warning_count": int - Number of warnings
+                - "errors": list of dicts with:
+                    - "file": str - File path where error occurred
+                    - "line": int - Line number
+                    - "column": int | None - Column number (if available)
+                    - "message": str - Error message
+                - "duration_ms": float - Compilation time in milliseconds
 
         Example:
-            result = check_compilation(java_code)
-        if not result["compiles"]:
-            print(result["errors"])
+            result = await check_compilation(ctx)
+            if not result["compiles"]:
+                for error in result["errors"]:
+                    print(f"{error['file']}:{error['line']} - {error['message']}")
         """
-        errors = []
+        # Handle None repository_path
+        if not ctx.deps.repository_path:
+            logger.error("repository_path is None in ValidatorDependencies")
+            return {
+                "compiles": False,
+                "error_count": 1,
+                "warning_count": 0,
+                "errors": [
+                    {
+                        "file": "unknown",
+                        "line": None,
+                        "column": None,
+                        "message": "Repository path not provided",
+                    }
+                ],
+                "duration_ms": 0.0,
+            }
 
-        # Check for balanced braces
-        open_braces = code.count("{")
-        close_braces = code.count("}")
-        if open_braces != close_braces:
-            errors.append(f"Unbalanced braces: {open_braces} open, {close_braces} close")
+        repo_path = Path(ctx.deps.repository_path)
 
-        # Check for balanced parentheses
-        open_parens = code.count("(")
-        close_parens = code.count(")")
-        if open_parens != close_parens:
-            errors.append(f"Unbalanced parentheses: {open_parens} open, {close_parens} close")
+        logger.info(f"🔨 Compiling Java project at: {repo_path}")
 
-        # Check for package declaration
-        if "class " in code and "package " not in code:
-            errors.append("Missing package declaration")
+        try:
+            # Detect build tool
+            build_info = await detect_build_tool(repo_path)
+            logger.debug(f"Detected build tool: {build_info.tool}")
 
-        # Check for common syntax issues
-        lines = code.split("\n")
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
+            if build_info.tool == "unknown":
+                logger.warning("No build tool detected, skipping compilation")
+                return {
+                    "compiles": False,
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "errors": [
+                        {
+                            "file": str(repo_path),
+                            "line": None,
+                            "column": None,
+                            "message": "No build tool detected (pom.xml or build.gradle not found)",
+                        }
+                    ],
+                    "duration_ms": 0.0,
+                }
 
-            # Skip comments and empty lines
-            if stripped.startswith("//") or stripped.startswith("/*") or not stripped:
-                continue
+            # Run actual compilation
+            compile_result = await compile_java_project(
+                repo_path=repo_path,
+                build_tool_info=build_info,
+                clean=False,  # Don't clean, just compile
+                skip_tests=True,  # Tests checked separately
+            )
 
-            # Check for statements that should end with semicolon
-            if any(keyword in stripped for keyword in ["return ", "throw ", "break", "continue"]):
-                if (
-                    not stripped.endswith(";")
-                    and not stripped.endswith("{")
-                    and not stripped.endswith("}")
-                ):
-                    errors.append(f"Line {i}: Statement may be missing semicolon")
+            # Convert CompilationError objects to dicts
+            errors_list = [
+                {
+                    "file": err.file_path,
+                    "line": err.line_number,
+                    "column": err.column_number,
+                    "message": err.message,
+                }
+                for err in compile_result.errors
+            ]
 
-        compiles = len(errors) == 0
-        logger.debug(f"Compilation check: {'PASS' if compiles else 'FAIL'}, {len(errors)} errors")
+            warnings_list = [
+                {
+                    "file": warn.file_path,
+                    "line": warn.line_number,
+                    "column": warn.column_number,
+                    "message": warn.message,
+                }
+                for warn in compile_result.warnings
+            ]
 
-        return {"compiles": compiles, "errors": errors}
+            result = {
+                "compiles": compile_result.success,
+                "error_count": compile_result.error_count,
+                "warning_count": compile_result.warning_count,
+                "errors": errors_list,
+                "warnings": warnings_list,
+                "duration_ms": compile_result.duration_ms,
+                "build_tool": compile_result.build_tool,
+            }
+
+            if compile_result.success:
+                logger.info(f"✅ Compilation successful ({compile_result.duration_ms:.0f}ms)")
+            else:
+                logger.warning(
+                    f"❌ Compilation failed: {compile_result.error_count} errors, "
+                    f"{compile_result.warning_count} warnings ({compile_result.duration_ms:.0f}ms)"
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Compilation check failed: {e}")
+            return {
+                "compiles": False,
+                "error_count": 1,
+                "warning_count": 0,
+                "errors": [
+                    {
+                        "file": str(repo_path),
+                        "line": None,
+                        "column": None,
+                        "message": f"Compilation error: {str(e)}",
+                    }
+                ],
+                "duration_ms": 0.0,
+            }
+
+    # Tool: Run Unit Tests (REAL Maven/Gradle test execution)
+    @agent.tool
+    async def run_unit_tests(
+        ctx: RunContext[ValidatorDependencies],
+        test_pattern: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Run unit tests for the Java project using Maven or Gradle.
+
+        This executes ACTUAL tests, not simulation!
+        - Detects build tool (Maven/Gradle) automatically
+        - Runs test suite via subprocess
+        - Parses test results including failures
+        - Returns structured test information
+
+        Args:
+            ctx: Agent runtime context with ValidatorDependencies
+            test_pattern: Optional test pattern/filter (e.g., "**/Test*.java")
+
+        Returns:
+            dict with:
+                - "all_passed": bool - Whether all tests passed
+                - "tests_run": int - Number of tests executed
+                - "failures": int - Number of test failures
+                - "errors": int - Number of test errors
+                - "skipped": int - Number of skipped tests
+                - "pass_rate": float - Percentage of tests passed (0.0-1.0)
+                - "duration_ms": float - Test execution time
+                - "failed_tests": list of dicts with:
+                    - "test_class": str - Test class name
+                    - "test_method": str - Test method name
+                    - "error_type": str - Exception type
+                    - "message": str - Failure message
+
+        Example:
+            result = await run_unit_tests(ctx)
+            if not result["all_passed"]:
+                print(f"Failed: {result['failures']}/{result['tests_run']}")
+                for test in result["failed_tests"]:
+                    print(f"  {test['test_class']}.{test['test_method']}")
+        """
+        # Handle None repository_path
+        if not ctx.deps.repository_path:
+            logger.error("repository_path is None in ValidatorDependencies")
+            return {
+                "all_passed": False,
+                "tests_run": 0,
+                "failures": 0,
+                "errors": 1,
+                "skipped": 0,
+                "pass_rate": 0.0,
+                "duration_ms": 0.0,
+                "failed_tests": [
+                    {
+                        "test_class": "System",
+                        "test_method": "setup",
+                        "error_type": "ConfigurationError",
+                        "message": "Repository path not provided",
+                    }
+                ],
+            }
+
+        repo_path = Path(ctx.deps.repository_path)
+
+        logger.info(f"🧪 Running tests for Java project at: {repo_path}")
+
+        try:
+            # Detect build tool
+            build_info = await detect_build_tool(repo_path)
+            logger.debug(f"Detected build tool: {build_info.tool}")
+
+            if build_info.tool == "unknown":
+                logger.warning("No build tool detected, skipping tests")
+                return {
+                    "all_passed": False,
+                    "tests_run": 0,
+                    "failures": 0,
+                    "errors": 1,
+                    "skipped": 0,
+                    "pass_rate": 0.0,
+                    "duration_ms": 0.0,
+                    "failed_tests": [
+                        {
+                            "test_class": "BuildSystem",
+                            "test_method": "detection",
+                            "error_type": "BuildToolNotFound",
+                            "message": "No build tool detected (pom.xml or build.gradle not found)",
+                        }
+                    ],
+                }
+
+            # Run actual tests
+            test_result = await run_java_tests(
+                repo_path=repo_path,
+                build_tool_info=build_info,
+                test_pattern=test_pattern,
+            )
+
+            # Convert TestFailure objects to dicts
+            failed_tests_list = [
+                {
+                    "test_class": failure.test_class,
+                    "test_method": failure.test_method,
+                    "error_type": failure.error_type,
+                    "message": failure.message,
+                }
+                for failure in test_result.failures
+            ]
+
+            result = {
+                "all_passed": test_result.success,
+                "tests_run": test_result.tests_run,
+                "failures": test_result.tests_failed,
+                "errors": 0,  # TestResult doesn't separate failures/errors
+                "skipped": test_result.tests_skipped,
+                "pass_rate": test_result.pass_rate,
+                "duration_ms": test_result.duration_ms,
+                "build_tool": test_result.build_tool,
+                "failed_tests": failed_tests_list,
+            }
+
+            if test_result.success:
+                logger.info(
+                    f"✅ All tests passed: {test_result.tests_run} tests "
+                    f"({test_result.duration_ms:.0f}ms)"
+                )
+            else:
+                logger.warning(
+                    f"❌ Tests failed: {test_result.tests_failed} failures "
+                    f"out of {test_result.tests_run} tests "
+                    f"({test_result.duration_ms:.0f}ms)"
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Test execution failed: {e}")
+            return {
+                "all_passed": False,
+                "tests_run": 0,
+                "failures": 0,
+                "errors": 1,
+                "skipped": 0,
+                "pass_rate": 0.0,
+                "duration_ms": 0.0,
+                "failed_tests": [
+                    {
+                        "test_class": "System",
+                        "test_method": "execution",
+                        "error_type": "RuntimeError",
+                        "message": f"Test execution error: {str(e)}",
+                    }
+                ],
+            }
 
     # Tool: Check code quality
     @agent.tool

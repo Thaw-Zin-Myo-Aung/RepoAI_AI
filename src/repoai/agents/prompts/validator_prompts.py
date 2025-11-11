@@ -54,15 +54,64 @@ VALIDATOR_INSTRUCTIONS = """**How to Validate Code Changes:**
 ## Validation Process
 
 ### 1. Compilation Validation
-Check for common compilation issues:
+Use the `check_compilation` tool to perform **REAL** Maven/Gradle compilation:
 ```
-✓ Balanced braces and parentheses
-✓ Package declarations present
-✓ Semicolons in appropriate places
-✓ No obvious syntax errors
+✓ Actual Java compiler execution (javac)
+✓ Full dependency resolution
+✓ Precise error locations (file, line, column)
+✓ Structured compilation errors and warnings
+✓ Build tool detection (Maven/Gradle)
 ```
 
-### 2. Code Quality Assessment
+The tool returns:
+- `compiles`: boolean - whether compilation succeeded
+- `error_count`: int - number of compilation errors
+- `warning_count`: int - number of warnings
+- `errors`: list of errors with file paths, line numbers, and messages
+- `duration_ms`: float - compilation time
+
+Example errors from real compilation:
+```
+[ERROR] /src/User.java:[23,15] cannot find symbol
+[ERROR] /src/Service.java:[45] incompatible types: String cannot be converted to Integer
+[WARNING] /src/Utils.java:[12] unchecked call to add(E) as member of raw type ArrayList
+```
+
+**When to use:**
+- After transformer applies code changes
+- When refactoring affects multiple files
+- When updating method signatures or imports
+
+### 2. Unit Test Validation
+Use the `run_unit_tests` tool to execute **REAL** JUnit tests:
+```
+✓ Actual test execution via Maven/Gradle
+✓ Test pass/fail status
+✓ Detailed failure information
+✓ Pass rate calculation
+✓ Test execution time
+```
+
+The tool returns:
+- `all_passed`: boolean - whether all tests passed
+- `tests_run`: int - total number of tests
+- `failures`: int - number of failed tests
+- `pass_rate`: float - percentage passed (0.0-1.0)
+- `failed_tests`: list of failures with test class, method, error type, and message
+
+Example test failures:
+```
+TestClass: UserServiceTest
+TestMethod: testCreateUser_withInvalidEmail
+Error: AssertionError - Expected exception not thrown
+```
+
+**When to use:**
+- After code changes that affect business logic
+- When modifying service layer methods
+- To verify refactoring didn't break functionality
+
+### 3. Code Quality Assessment
 Evaluate code quality (0-10 scale):
 ```
 10 = Perfect code (rare)
@@ -79,6 +128,41 @@ Quality factors:
 - Naming conventions (camelCase, PascalCase)
 - Magic numbers (should be constants)
 - Code duplication
+
+### 4. Spring Framework Conventions
+Verify Spring best practices:
+```
+✓ Constructor injection (preferred over field injection)
+✓ Proper annotation usage (@Service, @RestController, @Component)
+✓ REST endpoint conventions (/api/resource pattern)
+✓ Transaction boundaries (@Transactional on service layer)
+✓ Exception handling (@ControllerAdvice, @ExceptionHandler)
+```
+
+Common violations:
+- `@Autowired` on fields (use constructor injection)
+- `@Service` without interface
+- `@Transactional` on controller (should be on service)
+- Missing `@RequestMapping` on `@RestController`
+
+### 5. Test Coverage Validation
+Use `run_unit_tests` tool to get **ACTUAL** test execution results:
+```
+Excellent: > 80% pass_rate
+Good: 60-80% pass_rate
+Fair: 40-60% pass_rate
+Poor: < 40% pass_rate
+```
+
+Also evaluate:
+- Test naming conventions (should start with `test` or have `@Test`)
+- Test organization (one test class per production class)
+- Mock usage (proper use of Mockito)
+- All tests should pass (all_passed = true)
+
+**Important:** If `run_unit_tests` shows failures, investigate the `failed_tests` list to understand what broke.
+
+### 6. Security Vulnerability Detection
 
 ### 3. Spring Framework Conventions
 Verify Spring best practices:
