@@ -140,61 +140,74 @@ def add_dependency(
         True if dependency was added successfully, False otherwise
     """
     try:
-        # Check if dependency already exists
-        if dependency_exists(pom_path, group_id, artifact_id):
-            logger.info(f"Dependency {group_id}:{artifact_id} already exists in pom.xml")
-            return True
+        # Check if dependency already exists (read from file directly to avoid XML parsing issues)
+        existing_deps = get_dependencies(pom_path)
+        for dep in existing_deps:
+            if dep["groupId"] == group_id and dep["artifactId"] == artifact_id:
+                logger.info(f"Dependency {group_id}:{artifact_id} already exists in pom.xml")
+                return True
 
-        tree = parse_pom_xml(pom_path)
-        root = tree.getroot()
-        if root is None:
-            logger.error("Failed to get root element from pom.xml")
-            return False
-
-        ns = get_maven_namespace(root)
-
-        # Find or create <dependencies> element
-        deps_elem = root.find(f"{ns}dependencies")
-        if deps_elem is None:
-            # Create dependencies element after properties or before build
-            properties_elem = root.find(f"{ns}properties")
-            if properties_elem is not None:
-                # Insert after properties
-                idx = list(root).index(properties_elem) + 1
-            else:
-                # Insert before build or at end
-                build_elem = root.find(f"{ns}build")
-                if build_elem is not None:
-                    idx = list(root).index(build_elem)
-                else:
-                    idx = len(root)
-
-            deps_elem = ET.Element("dependencies")
-            root.insert(idx, deps_elem)
-
-        # Create new dependency element
-        dep_elem = ET.SubElement(deps_elem, "dependency")
-
-        # Add groupId
-        group_elem = ET.SubElement(dep_elem, "groupId")
-        group_elem.text = group_id
-
-        # Add artifactId
-        artifact_elem = ET.SubElement(dep_elem, "artifactId")
-        artifact_elem.text = artifact_id
-
-        # Add version
-        version_elem = ET.SubElement(dep_elem, "version")
-        version_elem.text = version
-
-        # Add scope if specified
-        if scope:
-            scope_elem = ET.SubElement(dep_elem, "scope")
-            scope_elem.text = scope
-
-        # Write back to file with proper formatting
+        # Read the pom.xml as text
         pom_path = Path(pom_path)
-        tree.write(pom_path, encoding="UTF-8", xml_declaration=True)
+        content = pom_path.read_text()
+
+        # Find the </dependencies> closing tag
+        if "</dependencies>" in content:
+            # Add new dependency before the closing tag
+            new_dependency = f"""    <dependency>
+        <groupId>{group_id}</groupId>
+        <artifactId>{artifact_id}</artifactId>
+        <version>{version}</version>"""
+
+            if scope:
+                new_dependency += f"\n        <scope>{scope}</scope>"
+
+            new_dependency += "\n    </dependency>\n"
+
+            # Insert before </dependencies>
+            content = content.replace("</dependencies>", f"{new_dependency}</dependencies>", 1)
+        else:
+            # No dependencies section exists, create one
+            # Try to insert after </properties> or before </project>
+            if "</properties>" in content:
+                insert_point = "</properties>"
+                new_section = f"""{insert_point}
+
+    <dependencies>
+        <dependency>
+            <groupId>{group_id}</groupId>
+            <artifactId>{artifact_id}</artifactId>
+            <version>{version}</version>"""
+
+                if scope:
+                    new_section += f"\n            <scope>{scope}</scope>"
+
+                new_section += """
+        </dependency>
+    </dependencies>
+"""
+                content = content.replace(insert_point, new_section, 1)
+            else:
+                # Insert before </project>
+                new_section = f"""
+    <dependencies>
+        <dependency>
+            <groupId>{group_id}</groupId>
+            <artifactId>{artifact_id}</artifactId>
+            <version>{version}</version>"""
+
+                if scope:
+                    new_section += f"\n            <scope>{scope}</scope>"
+
+                new_section += """
+        </dependency>
+    </dependencies>
+
+</project>"""
+                content = content.replace("</project>", new_section)
+
+        # Write back
+        pom_path.write_text(content)
 
         logger.info(f"✅ Added dependency {group_id}:{artifact_id}:{version} to pom.xml")
         return True
