@@ -31,7 +31,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from repoai.models import RefactorPlan
+from repoai.models import RefactorPlan, ValidationResult
 from repoai.utils.logger import get_logger
 
 from .models import PipelineStage, PipelineStatus, PipelineUpdateMessage
@@ -156,7 +156,7 @@ class ChatOrchestrator(OrchestratorAgent):
         # Send as JSON if callback expects it
         import json
 
-        self.send_message(json.dumps(update.model_dump()))
+        self.send_message(json.dumps(update.model_dump(mode="json")))
 
     async def _run_planning_stage(self) -> None:
         """
@@ -307,7 +307,8 @@ class ChatOrchestrator(OrchestratorAgent):
                 )
 
                 # Regenerate plan with updated instructions
-                await self._regenerate_plan_with_modifications(decision.modifications)
+                # No validation_result in planning phase - pass None
+                await self._regenerate_plan_with_modifications(None, decision.modifications)
 
                 # Loop continues to show new plan
 
@@ -342,11 +343,14 @@ class ChatOrchestrator(OrchestratorAgent):
                 )
                 # Loop continues to ask again
 
-    async def _regenerate_plan_with_modifications(self, modifications: str) -> None:
+    async def _regenerate_plan_with_modifications(
+        self, validation_result: ValidationResult | None, modifications: str
+    ) -> None:
         """
         Regenerate plan with user modifications.
 
         Args:
+            validation_result: The validation result (may be None during user-driven planning phase)
             modifications: User's modification instructions
         """
         if not self.state.job_spec:
@@ -354,25 +358,27 @@ class ChatOrchestrator(OrchestratorAgent):
 
         logger.info(f"Regenerating plan with modifications: {modifications}")
 
-        # Update job spec with modification context
-        # (In practice, you might update requirements or add context)
-        original_requirements = self.state.job_spec.requirements.copy()
-        self.state.job_spec.requirements.append(f"User modification: {modifications}")
+        # Call parent implementation which handles validation errors properly
+        # Pass dummy validation result if None (user-driven modification during planning)
+        if validation_result is None:
+            # Create empty validation result for user-driven modifications
+            from repoai.explainability.confidence import ConfidenceMetrics
 
-        try:
-            # Regenerate plan
-            await self._generate_plan()
+            validation_result = ValidationResult(
+                plan_id=self.state.plan.plan_id if self.state.plan else "unknown",
+                passed=False,
+                test_coverage=0.0,
+                confidence=ConfidenceMetrics(
+                    overall_confidence=0.5,
+                    reasoning_quality=0.5,
+                    code_safety=0.5,
+                    test_coverage=0.5,
+                ),
+            )
 
-            logger.info("Plan regenerated successfully")
-            self.send_message("✓ Plan regenerated with your modifications")
+        await super()._regenerate_plan_with_modifications(validation_result, modifications)
 
-        except Exception as e:
-            logger.error(f"Failed to regenerate plan: {e}")
-            self.send_message(f"❌ Failed to regenerate plan: {e}")
-
-            # Restore original requirements
-            self.state.job_spec.requirements = original_requirements
-            raise
+        self.send_message("✓ Plan regenerated with your modifications")
 
     def _build_plan_summary(self, plan: RefactorPlan) -> str:
         """Build human-readable plan summary."""

@@ -249,6 +249,59 @@ class OrchestratorAgent:
             f"time={duration_ms:.0f}ms"
         )
 
+    async def _regenerate_plan_with_modifications(
+        self, validation_result: ValidationResult, modifications: str
+    ) -> None:
+        """
+        Regenerate plan with modification instructions from validation errors.
+
+        Args:
+            validation_result: The failed validation result
+            modifications: Modification instructions from LLM
+        """
+        from repoai.agents.planner_agent import run_planner_agent
+        from repoai.dependencies import PlannerDependencies
+
+        if not self.state.job_spec:
+            raise RuntimeError("JobSpec not available")
+
+        logger.info("Regenerating plan with modifications...")
+
+        # Build enhanced requirements list with modifications
+        error_summary = self._build_error_summary(validation_result)
+
+        # Add modification instructions to requirements
+        enhanced_requirements = list(self.state.job_spec.requirements)
+        enhanced_requirements.append(f"CRITICAL - Address validation errors: {modifications}")
+        enhanced_requirements.append(f"Previous validation errors: {error_summary[:500]}")
+
+        # Update job spec with enhanced requirements
+        from repoai.models import JobSpec
+
+        modified_job_spec = JobSpec(
+            job_id=f"{self.state.job_spec.job_id}_modified",
+            intent=self.state.job_spec.intent,
+            scope=self.state.job_spec.scope,
+            requirements=enhanced_requirements,
+            constraints=self.state.job_spec.constraints,
+        )
+
+        # Prepare dependencies
+        planner_deps = PlannerDependencies(
+            job_spec=modified_job_spec,
+            repository_path=self.deps.repository_path,
+            repository_url=self.deps.repository_url,
+        )
+
+        # Re-run Planner Agent with modifications
+        plan, metadata = await run_planner_agent(modified_job_spec, planner_deps, self.adapter)
+
+        self.state.plan = plan
+        logger.info(
+            f"Plan regenerated: {plan.total_steps} steps, "
+            f"risk={plan.risk_assessment.overall_risk_level}/10"
+        )
+
     async def _run_transformation_stage(self) -> None:
         """Run Transformer Agent to generate code."""
         from repoai.agents.transformer_agent import run_transformer_agent
@@ -472,10 +525,26 @@ class OrchestratorAgent:
 
                 if retry_decision.modifications:
                     logger.info(f"Modifications: {retry_decision.modifications[:200]}...")
-                    # TODO: Implement plan modification and re-run from planning stage
-                    # For now, treat as abort
-                    logger.warning("Plan modification not yet implemented, stopping validation")
-                break
+
+                    # Increment retry count for plan modification
+                    self.state.retry_count += 1
+                    self.state.status = PipelineStatus.RETRYING
+
+                    # Re-run planning stage with modification instructions
+                    logger.info("Re-running Planner with modification instructions...")
+                    await self._regenerate_plan_with_modifications(
+                        validation_result, retry_decision.modifications
+                    )
+
+                    # Re-run transformation with new plan
+                    logger.info("Re-running Transformer with modified plan...")
+                    await self._run_transformation_stage()
+
+                    # Continue to next validation attempt
+                    continue
+                else:
+                    logger.warning("No modifications provided, treating as abort")
+                    break
 
             elif retry_decision.action == "abort":
                 logger.warning(f"LLM decision: ABORT (confidence={retry_decision.confidence:.2f})")

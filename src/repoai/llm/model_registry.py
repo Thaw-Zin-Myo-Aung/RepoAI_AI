@@ -105,9 +105,9 @@ def load_defaults_from_env() -> dict[ModelRole, list[ModelSpec]]:
         specs: list[ModelSpec] = []
         for model_id in ids:
             # Determine max_output_tokens based on role
-            if role in (ModelRole.CODER,):
-                max_tokens = 8192  # Code generation needs more tokens
-            elif role in (ModelRole.PLANNER, ModelRole.PR_NARRATOR):
+            if role in (ModelRole.CODER, ModelRole.PLANNER):
+                max_tokens = 8192  # Code generation and planning need more tokens
+            elif role in (ModelRole.PR_NARRATOR,):
                 max_tokens = 4096
             elif role in (ModelRole.ORCHESTRATOR,):
                 max_tokens = 1024  # Orchestrator decisions are concise
