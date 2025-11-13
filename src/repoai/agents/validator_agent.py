@@ -176,12 +176,19 @@ Identify potential issues, risks, and provide recommendations.
                     "duration_ms": 0.0,
                 }
 
-            # Run actual compilation
+            # Create progress callback wrapper
+            async def on_build_output(line: str) -> None:
+                """Forward build output to orchestrator via progress callback."""
+                if ctx.deps.progress_callback:
+                    await ctx.deps.progress_callback(line)
+
+            # Run actual compilation with streaming
             compile_result = await compile_java_project(
                 repo_path=repo_path,
                 build_tool_info=build_info,
                 clean=False,  # Don't clean, just compile
                 skip_tests=True,  # Tests checked separately
+                progress_callback=on_build_output,  # Enable streaming
             )
 
             # Convert CompilationError objects to dicts
@@ -333,11 +340,18 @@ Identify potential issues, risks, and provide recommendations.
                     ],
                 }
 
-            # Run actual tests
+            # Create progress callback wrapper for test output
+            async def on_test_output(line: str) -> None:
+                """Forward test output to orchestrator via progress callback."""
+                if ctx.deps.progress_callback:
+                    await ctx.deps.progress_callback(line)
+
+            # Run actual tests with streaming
             test_result = await run_java_tests(
                 repo_path=repo_path,
                 build_tool_info=build_info,
                 test_pattern=test_pattern,
+                progress_callback=on_test_output,  # Enable streaming
             )
 
             # Convert TestFailure objects to dicts

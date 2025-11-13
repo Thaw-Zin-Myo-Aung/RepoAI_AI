@@ -58,7 +58,8 @@ class RefactorRequest(BaseModel):
     github_credentials: GitHubCredentials = Field(description="GitHub access")
 
     mode: str = Field(
-        default="autonomous", description="Execution mode: 'autonomous' or 'interactive'"
+        default="interactive-detailed",
+        description="Execution mode: 'autonomous', 'interactive', or 'interactive-detailed'",
     )
 
     auto_fix_enabled: bool = Field(
@@ -210,6 +211,24 @@ class ProgressUpdate(BaseModel):
     # Optional data for specific stages
     data: dict[str, object] | None = None
 
+    # Enhanced fields for interactive-detailed mode
+    event_type: str | None = Field(
+        default=None,
+        description=(
+            "Specific event type: "
+            "plan_ready, file_created, file_modified, file_deleted, "
+            "build_output (Maven/Gradle streaming), "
+            "awaiting_confirmation, etc."
+        ),
+    )
+    file_path: str | None = Field(default=None, description="File being processed (if applicable)")
+    requires_confirmation: bool = Field(
+        default=False, description="Whether this event requires user confirmation"
+    )
+    confirmation_type: str | None = Field(
+        default=None, description="Type of confirmation needed: 'plan' or 'push'"
+    )
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -220,6 +239,10 @@ class ProgressUpdate(BaseModel):
                 "message": "Validating code changes...",
                 "timestamp": "2025-01-26T14:35:00",
                 "data": {"checks_completed": 3, "checks_total": 5, "current_check": "compilation"},
+                "event_type": "validation_running",
+                "file_path": None,
+                "requires_confirmation": False,
+                "confirmation_type": None,
             }
         }
     )
@@ -332,5 +355,114 @@ class HealthResponse(BaseModel):
                     "database": "not_configured",
                 },
             }
+        }
+    )
+
+
+# ============================================================================
+# Confirmation Request Models (interactive-detailed mode)
+# ============================================================================
+
+
+class PlanConfirmationRequest(BaseModel):
+    """
+    User's decision on the refactoring plan.
+
+    Used in interactive-detailed mode after planner completes.
+
+    Supports two input formats:
+    1. Structured format (programmatic):
+       {"action": "approve"} or {"action": "modify", "modifications": "..."}
+
+    2. Natural language format (interactive chat):
+       {"user_response": "yes, looks good"} or
+       {"user_response": "yes but use Redis instead of database"}
+
+    The orchestrator will use LLM to interpret natural language responses.
+    """
+
+    action: str | None = Field(
+        default=None,
+        description="Structured action: 'approve', 'modify', or 'cancel' (use this OR user_response, not both)",
+        pattern="^(approve|modify|cancel)$",
+    )
+    modifications: str | None = Field(
+        default=None,
+        description="Modification instructions (required if action='modify')",
+    )
+    user_response: str | None = Field(
+        default=None,
+        description="Natural language response from user (use this OR action, not both). LLM will interpret intent.",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"description": "Structured approval", "value": {"action": "approve"}},
+                {
+                    "description": "Structured modification",
+                    "value": {
+                        "action": "modify",
+                        "modifications": "Add comprehensive logging to all authentication methods",
+                    },
+                },
+                {
+                    "description": "Natural language approval",
+                    "value": {"user_response": "yes, looks great!"},
+                },
+                {
+                    "description": "Natural language modification",
+                    "value": {
+                        "user_response": "yes but please use Redis cache instead of in-memory cache"
+                    },
+                },
+                {
+                    "description": "Natural language cancellation",
+                    "value": {"user_response": "no, this is too risky"},
+                },
+            ]
+        }
+    )
+
+
+class PushConfirmationRequest(BaseModel):
+    """
+    User's decision on pushing changes to GitHub.
+
+    Used in interactive-detailed mode after validation passes.
+
+    Supports two input formats:
+    1. Structured: {"action": "approve"} or {"action": "cancel"}
+    2. Natural language: {"user_response": "yes, push it"}
+    """
+
+    action: str | None = Field(
+        default=None,
+        description="User's decision: 'approve' or 'cancel' (structured format)",
+        pattern="^(approve|cancel)$",
+    )
+    user_response: str | None = Field(
+        default=None,
+        description="Natural language response (alternative to structured action)",
+    )
+    branch_name_override: str | None = Field(
+        default=None,
+        description="Optional custom branch name (overrides auto-generated name)",
+    )
+    commit_message_override: str | None = Field(
+        default=None, description="Optional custom commit message (overrides PR narrator's message)"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "action": "approve",
+                    "branch_name_override": "feature/jwt-auth-v2",
+                    "commit_message_override": None,
+                },
+                {"user_response": "yes, push with message: Fix authentication bug"},
+                {"user_response": "yes but regenerate the commit message"},
+            ]
         }
     )

@@ -22,9 +22,12 @@ class PipelineStage(str, Enum):
     IDLE = "idle"
     INTAKE = "intake"
     PLANNING = "planning"
+    AWAITING_PLAN_CONFIRMATION = "awaiting_plan_confirmation"
     TRANSFORMATION = "transformation"
     VALIDATION = "validation"
     NARRATION = "narration"
+    AWAITING_PUSH_CONFIRMATION = "awaiting_push_confirmation"
+    GIT_OPERATIONS = "git_operations"
     COMPLETE = "complete"
     FAILED = "failed"
 
@@ -191,6 +194,23 @@ class PipelineState:
     user_confirmations: list[dict[str, str]] = field(default_factory=list)
     """Record of user confirmations requested and receieved"""
 
+    # Confirmation state (for interactive-detailed mode)
+    awaiting_confirmation: str | None = None
+    """Type of confirmation awaited: 'plan' or 'push' (None if not waiting)"""
+
+    confirmation_data: dict[str, object] | None = None
+    """Data to show user for confirmation decision (plan summary, file list, etc.)"""
+
+    # Git operations tracking
+    git_branch_name: str | None = None
+    """Name of the branch created for refactored code"""
+
+    git_commit_hash: str | None = None
+    """Hash of the commit after changes are committed"""
+
+    git_push_status: str | None = None
+    """Status of git push: 'pending', 'pushed', or 'failed'"""
+
     @property
     def elapsed_time_ms(self) -> float:
         """Calculate elapsed time in milliseconds."""
@@ -208,19 +228,26 @@ class PipelineState:
         Calculate overall progress (0.0 - 1.0).
 
         Based on stage completion:
-        - Intake: 0.2
-        - Planning: 0.4
-        - Transformation: 0.6
-        - Validation: 0.8
-        - Narration: 1.0
+        - Intake: 0.15
+        - Planning: 0.30
+        - Awaiting Plan Confirmation: 0.35
+        - Transformation: 0.55
+        - Validation: 0.75
+        - Narration: 0.85
+        - Awaiting Push Confirmation: 0.90
+        - Git Operations: 0.95
+        - Complete: 1.0
         """
         stage_progress = {
             PipelineStage.IDLE: 0.0,
-            PipelineStage.INTAKE: 0.2,
-            PipelineStage.PLANNING: 0.4,
-            PipelineStage.TRANSFORMATION: 0.6,
-            PipelineStage.VALIDATION: 0.8,
-            PipelineStage.NARRATION: 0.9,
+            PipelineStage.INTAKE: 0.15,
+            PipelineStage.PLANNING: 0.30,
+            PipelineStage.AWAITING_PLAN_CONFIRMATION: 0.35,
+            PipelineStage.TRANSFORMATION: 0.55,
+            PipelineStage.VALIDATION: 0.75,
+            PipelineStage.NARRATION: 0.85,
+            PipelineStage.AWAITING_PUSH_CONFIRMATION: 0.90,
+            PipelineStage.GIT_OPERATIONS: 0.95,
             PipelineStage.COMPLETE: 1.0,
             PipelineStage.FAILED: 0.0,
         }

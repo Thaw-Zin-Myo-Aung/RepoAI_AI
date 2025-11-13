@@ -2,9 +2,11 @@
 Refactor API routes.
 
 Endpoints:
-- POST /api/refactor           - Start refactoring job
-- GET  /api/refactor/{id}      - Get job status
-- GET  /api/refactor/{id}/sse  - Server-Sent Events stream
+- POST /api/refactor                      - Start refactoring job
+- GET  /api/refactor/{id}                 - Get job status
+- GET  /api/refactor/{id}/sse             - Server-Sent Events stream
+- POST /api/refactor/{id}/confirm-plan    - Confirm refactoring plan (interactive-detailed)
+- POST /api/refactor/{id}/confirm-push    - Confirm git push (interactive-detailed)
 """
 
 import asyncio
@@ -17,12 +19,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from repoai.dependencies import OrchestratorDependencies
 from repoai.orchestrator import OrchestratorAgent, PipelineStage, PipelineState, PipelineStatus
-from repoai.utils.git_utils import cleanup_repository, clone_repository
+from repoai.utils.git_utils import cleanup_repository
 from repoai.utils.logger import get_logger
 
 from ..models import (
     JobStatusResponse,
+    PlanConfirmationRequest,
     ProgressUpdate,
+    PushConfirmationRequest,
     RefactorRequest,
     RefactorResponse,
 )
@@ -34,6 +38,9 @@ router = APIRouter()
 # In-memory storage (use Redis/DB in production)
 active_sessions: dict[str, PipelineState] = {}
 session_queues: dict[str, asyncio.Queue[ProgressUpdate | None]] = {}
+confirmation_queues: dict[str, asyncio.Queue[dict[str, object]]] = {}
+# Buffer for storing messages before SSE client connects
+session_buffers: dict[str, list[ProgressUpdate | None]] = {}
 
 
 @router.post("/refactor", response_model=RefactorResponse)
@@ -73,7 +80,17 @@ async def start_refactor(
 
     # Create progress queue for SSE
     progress_queue: asyncio.Queue[ProgressUpdate | None] = asyncio.Queue()
-    session_queues[session_id] = progress_queue  # Initialize pipeline state
+    session_queues[session_id] = progress_queue
+
+    # Initialize message buffer for late SSE connections
+    session_buffers[session_id] = []
+
+    # Create confirmation queue for interactive-detailed mode
+    if request.mode == "interactive-detailed":
+        confirmation_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        confirmation_queues[session_id] = confirmation_queue
+
+    # Initialize pipeline state
     initial_state = PipelineState(
         session_id=session_id,
         user_id=request.user_id,
@@ -179,8 +196,27 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
     async def event_generator() -> AsyncIterator[dict[str, str]]:
         """Generate SSE events from progress queue."""
         queue = session_queues[session_id]
+        buffer = session_buffers.get(session_id, [])
 
         try:
+            # First, send any buffered messages (for late connections)
+            logger.info(f"SSE connected: {session_id}, buffered_messages={len(buffer)}")
+            for buffered_update in buffer:
+                if buffered_update is None:
+                    # Completion signal in buffer
+                    logger.info(f"SSE stream completed (from buffer): {session_id}")
+                    return
+
+                yield {
+                    "event": "progress",
+                    "data": buffered_update.model_dump_json(),
+                }
+
+            # Clear buffer after sending
+            if session_id in session_buffers:
+                session_buffers[session_id].clear()
+
+            # Then stream new messages from queue
             while True:
                 # Wait for progress update
                 update = await queue.get()
@@ -208,6 +244,172 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
     return EventSourceResponse(event_generator())
 
 
+@router.post("/refactor/{session_id}/confirm-plan")
+async def confirm_plan(session_id: str, request: PlanConfirmationRequest) -> dict[str, str]:
+    """
+    Confirm or modify the refactoring plan.
+
+    Used in interactive-detailed mode when pipeline is waiting for plan approval.
+
+    Supports two input formats:
+    1. Structured: {"action": "approve"} or {"action": "modify", "modifications": "..."}
+    2. Natural language: {"user_response": "yes but use Redis instead"}
+
+    Example structured request:
+        POST /api/refactor/session_123/confirm-plan
+        {"action": "approve"}
+
+    Example natural language request:
+        POST /api/refactor/session_123/confirm-plan
+        {"user_response": "looks good but add logging to all methods"}
+
+    Example response:
+        {"status": "confirmed", "message": "Plan approved, continuing transformation"}
+    """
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    state = active_sessions[session_id]
+
+    # Verify pipeline is waiting for plan confirmation
+    if state.awaiting_confirmation != "plan":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session not awaiting plan confirmation (current: {state.awaiting_confirmation})",
+        )
+
+    # Validate input - must have either action or user_response, not both
+    if request.action and request.user_response:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either 'action' (structured) or 'user_response' (natural language), not both",
+        )
+
+    if not request.action and not request.user_response:
+        raise HTTPException(
+            status_code=400, detail="Must provide either 'action' or 'user_response'"
+        )
+
+    # Validate structured format
+    if request.action == "modify" and not request.modifications and not request.user_response:
+        raise HTTPException(status_code=400, detail="Modifications required when action='modify'")
+
+    logger.info(
+        f"Plan confirmation received: session={session_id}, "
+        f"action={request.action or 'natural_language'}, "
+        f"user_response={request.user_response[:50] if request.user_response else None}"
+    )
+
+    # Put confirmation in queue (orchestrator is waiting for this)
+    if session_id in confirmation_queues:
+        if request.user_response:
+            # Natural language format - orchestrator will use LLM to interpret
+            await confirmation_queues[session_id].put({"user_response": request.user_response})
+        else:
+            # Structured format - direct action
+            await confirmation_queues[session_id].put(
+                {"action": request.action, "modifications": request.modifications}
+            )
+
+    response_message = (
+        "Processing natural language response..."
+        if request.user_response
+        else f"Plan {request.action}d, continuing pipeline"
+    )
+
+    return {
+        "status": "confirmed",
+        "message": response_message,
+    }
+
+
+@router.post("/refactor/{session_id}/confirm-push")
+async def confirm_push(session_id: str, request: PushConfirmationRequest) -> dict[str, str]:
+    """
+    Confirm or cancel pushing changes to GitHub.
+
+    Used in interactive-detailed mode when pipeline is waiting for push approval.
+
+    Supports two input formats:
+    1. Structured: {"action": "approve"} or {"action": "cancel"}
+    2. Natural language: {"user_response": "yes, push it"}
+
+    Example structured request:
+        POST /api/refactor/session_123/confirm-push
+        {"action": "approve"}
+
+    Example natural language request:
+        POST /api/refactor/session_123/confirm-push
+        {"user_response": "yes but regenerate the commit message"}
+
+    Example response:
+        {
+            "status": "confirmed",
+            "message": "Push approved, committing and pushing to GitHub"
+        }
+    """
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    state = active_sessions[session_id]
+
+    # Verify pipeline is waiting for push confirmation
+    if state.awaiting_confirmation != "push":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session not awaiting push confirmation (current: {state.awaiting_confirmation})",
+        )
+
+    # Validate input - must have either action or user_response, not both
+    if request.action and request.user_response:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either 'action' (structured) or 'user_response' (natural language), not both",
+        )
+
+    if not request.action and not request.user_response:
+        raise HTTPException(
+            status_code=400, detail="Must provide either 'action' or 'user_response'"
+        )
+
+    logger.info(
+        f"Push confirmation received: session={session_id}, "
+        f"action={request.action or 'natural_language'}, "
+        f"user_response={request.user_response[:50] if request.user_response else None}"
+    )
+
+    # Put confirmation in queue (orchestrator is waiting for this)
+    if session_id in confirmation_queues:
+        if request.user_response:
+            # Natural language format - orchestrator will use LLM to interpret
+            await confirmation_queues[session_id].put({"user_response": request.user_response})
+        else:
+            # Structured format - direct action with optional overrides
+            await confirmation_queues[session_id].put(
+                {
+                    "action": request.action,
+                    "branch_name_override": request.branch_name_override,
+                    "commit_message_override": request.commit_message_override,
+                }
+            )
+
+    if request.user_response:
+        return {
+            "status": "confirmed",
+            "message": "Processing natural language response...",
+        }
+    elif request.action == "approve":
+        return {
+            "status": "confirmed",
+            "message": "Push approved, committing and pushing to GitHub",
+        }
+    else:
+        return {
+            "status": "cancelled",
+            "message": "Push cancelled, changes will not be pushed",
+        }
+
+
 # ============================================================================
 # Background Task: Run Pipeline
 # ============================================================================
@@ -222,6 +424,9 @@ async def run_pipeline(
     Background task to run refactoring pipeline.
 
     Sends progress updates to queue for SSE streaming.
+
+    Optimization: Repository cloning is deferred until after conversational intent check.
+    If it's just a greeting, we skip cloning entirely.
     """
     repository_path = None
     try:
@@ -230,91 +435,69 @@ async def run_pipeline(
         # Get state
         state = active_sessions[session_id]
 
-        # Clone GitHub repository for validation
-        try:
-            logger.info(f"Cloning repository: {request.github_credentials.repository_url}")
-            repo_path = clone_repository(
-                repo_url=request.github_credentials.repository_url,
-                access_token=request.github_credentials.access_token,
-                branch=request.github_credentials.branch,
-            )
-            repository_path = str(repo_path)
-            logger.info(f"Repository cloned to: {repository_path}")
-
-            # Send progress update about successful clone
-            await progress_queue.put(
-                ProgressUpdate(
-                    session_id=session_id,
-                    stage=PipelineStage.IDLE,
-                    status="in_progress",
-                    progress=0.05,
-                    message=f"✅ Repository cloned: {request.github_credentials.repository_url}",
-                    timestamp=datetime.now(),
-                )
-            )
-
-        except Exception as clone_exc:
-            logger.error(f"Repository clone failed: {clone_exc}")
-            state.errors.append(f"Failed to clone repository: {clone_exc}")
-            state.status = PipelineStatus.FAILED
-
-            # Send error update
-            await progress_queue.put(
-                ProgressUpdate(
-                    session_id=session_id,
-                    stage=state.stage,
-                    status="failed",
-                    progress=0.0,
-                    message=f"❌ Clone failed: {clone_exc}",
-                    timestamp=datetime.now(),
-                )
-            )
-            await progress_queue.put(None)  # Signal completion
-            return
-
-        # Configure orchestrator dependencies
+        # Configure orchestrator dependencies WITHOUT repository initially
+        # Repository will be cloned inside orchestrator only if needed
         deps = OrchestratorDependencies(
             user_id=request.user_id,
             session_id=session_id,
             pipeline_state=state,
             repository_url=request.github_credentials.repository_url,
-            repository_path=repository_path,  # TODO: Set after cloning repo
+            repository_path=None,  # Will be set after conversational check
+            github_credentials=request.github_credentials,
             auto_fix_enabled=request.auto_fix_enabled,
             max_retries=request.max_retries,
             timeout_seconds=request.timeout_seconds,
-            enable_user_interaction=(request.mode == "interactive"),
-            enable_progress_updates=True,
-            # For autonomous mode, no chat callbacks needed
-            send_message=lambda msg: (
-                _send_progress_update(session_id, state.stage, msg, progress_queue)
-                if request.mode == "autonomous"
-                else None
+            enable_user_interaction=(
+                request.mode == "interactive" or request.mode == "interactive-detailed"
             ),
+            enable_progress_updates=True,
+            # Enhanced send_message callback that handles all event types including build_output
+            send_message=lambda msg: _send_progress_to_queue(session_id, msg, progress_queue),
             high_risk_threshold=request.high_risk_threshold,
             min_test_coverage=request.min_test_coverage,
         )
 
-        # Create orchestrator (autonomous mode for now)
+        # Create orchestrator
         orchestrator = OrchestratorAgent(deps)
 
-        # Run pipeline
-        final_state = await orchestrator.run(request.user_prompt)
+        # Get confirmation queue if in interactive-detailed mode
+        confirmation_queue = (
+            confirmation_queues.get(session_id) if request.mode == "interactive-detailed" else None
+        )
+
+        # Run pipeline with mode and confirmation queue
+        # Orchestrator will check conversational intent first, then clone if needed
+        final_state = await orchestrator.run(
+            request.user_prompt, mode=request.mode, confirmation_queue=confirmation_queue
+        )
 
         # Update stored state
         active_sessions[session_id] = final_state
 
-        # Send final update
-        await progress_queue.put(
-            ProgressUpdate(
+        # Only send completion message for actual pipeline runs (not conversations)
+        # For conversational responses, the orchestrator already sent the greeting message
+        is_conversational = final_state.job_spec is None and final_state.plan is None
+
+        if not is_conversational:
+            # This was a real pipeline run, send completion summary
+            if final_state.is_complete:
+                completion_message = "Refactoring completed!"
+                files_changed = (
+                    final_state.code_changes.total_changes if final_state.code_changes else 0
+                )
+            else:
+                completion_message = "Pipeline failed"
+                files_changed = 0
+
+            # Send final update
+            final_update = ProgressUpdate(
                 session_id=session_id,
                 stage=final_state.stage,
                 status="completed" if final_state.is_complete else "failed",
                 progress=1.0 if final_state.is_complete else final_state.progress_percentage,
-                message="Refactoring completed!" if final_state.is_complete else "Pipeline failed",
+                message=completion_message,
                 data={
-                    "files_changed": (
-                        final_state.code_changes.total_changes if final_state.code_changes else 0
-                    ),
+                    "files_changed": files_changed,
                     "validation_passed": (
                         final_state.validation_result.passed
                         if final_state.validation_result
@@ -322,10 +505,18 @@ async def run_pipeline(
                     ),
                 },
             )
-        )
+            await progress_queue.put(final_update)
+
+            # Buffer final update
+            if session_id in session_buffers:
+                session_buffers[session_id].append(final_update)
 
         # Signal completion
         await progress_queue.put(None)
+
+        # Buffer completion signal
+        if session_id in session_buffers:
+            session_buffers[session_id].append(None)
 
         logger.info(
             f"Pipeline completed: {session_id}, "
@@ -344,18 +535,25 @@ async def run_pipeline(
             state.add_error(str(e))
 
         # Send error update
-        await progress_queue.put(
-            ProgressUpdate(
-                session_id=session_id,
-                stage=PipelineStage.FAILED,
-                status="failed",
-                progress=0.0,
-                message=f"Pipeline failed: {str(e)}",
-            )
+        error_update = ProgressUpdate(
+            session_id=session_id,
+            stage=PipelineStage.FAILED,
+            status="failed",
+            progress=0.0,
+            message=f"Pipeline failed: {str(e)}",
         )
+        await progress_queue.put(error_update)
+
+        # Buffer error update
+        if session_id in session_buffers:
+            session_buffers[session_id].append(error_update)
 
         # Signal completion
         await progress_queue.put(None)
+
+        # Buffer completion signal
+        if session_id in session_buffers:
+            session_buffers[session_id].append(None)
 
     finally:
         # Clean up cloned repository
@@ -387,8 +585,83 @@ def _send_progress_update(
         # Put in queue (sync call, orchestrator runs in event loop already)
         asyncio.create_task(queue.put(update))
 
+        # Also buffer for late SSE connections
+        if session_id in session_buffers:
+            session_buffers[session_id].append(update)
+
     except Exception as e:
         logger.error(f"Failed to send progress update: {e}")
+
+
+def _send_progress_to_queue(
+    session_id: str,
+    msg: str,
+    queue: asyncio.Queue[ProgressUpdate | None],
+) -> None:
+    """
+    Enhanced progress callback that handles all event types.
+
+    Handles:
+    - Simple string messages
+    - JSON-serialized ProgressUpdate objects (includes build_output events)
+
+    Args:
+        session_id: Session identifier
+        msg: Either a simple string message or JSON-serialized ProgressUpdate
+        queue: Progress queue for SSE streaming
+    """
+    try:
+        state = active_sessions.get(session_id)
+        if not state:
+            logger.warning(f"[QUEUE] No state found for session {session_id}")
+            return
+
+        # Try to parse as JSON ProgressUpdate first
+        try:
+            import json
+
+            data = json.loads(msg)
+
+            # If it's already a ProgressUpdate dict, create object and send
+            if isinstance(data, dict) and "session_id" in data:
+                update = ProgressUpdate(**data)
+                logger.info(
+                    f"[QUEUE] Parsed ProgressUpdate: event_type={update.event_type}, message={update.message[:50]}..."
+                )
+                asyncio.create_task(queue.put(update))
+
+                # Also buffer for late SSE connections
+                if session_id in session_buffers:
+                    session_buffers[session_id].append(update)
+                    logger.debug(
+                        f"[QUEUE] Buffered update (buffer size: {len(session_buffers[session_id])})"
+                    )
+                return
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            # Not JSON, treat as simple string message
+            logger.debug(f"[QUEUE] Not JSON, treating as string: {str(e)[:100]}")
+            pass
+
+        # Fallback: treat as simple string message
+        logger.info(f"[QUEUE] Creating simple ProgressUpdate: {msg[:50]}...")
+        update = ProgressUpdate(
+            session_id=session_id,
+            stage=state.stage,
+            status=state.status.value if hasattr(state.status, "value") else str(state.status),
+            progress=state.progress_percentage,
+            message=msg,
+        )
+        asyncio.create_task(queue.put(update))
+
+        # Also buffer for late SSE connections
+        if session_id in session_buffers:
+            session_buffers[session_id].append(update)
+            logger.debug(
+                f"[QUEUE] Buffered simple update (buffer size: {len(session_buffers[session_id])})"
+            )
+
+    except Exception as e:
+        logger.error(f"Failed to send progress to queue: {e}", exc_info=True)
 
 
 def _get_stage_message(state: PipelineState) -> str:

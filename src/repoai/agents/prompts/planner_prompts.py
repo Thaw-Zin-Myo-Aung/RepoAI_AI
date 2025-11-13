@@ -49,6 +49,29 @@ Be thorough, practical, and safety-conscious in your planning."""
 
 PLANNER_INSTRUCTIONS = """**How to Create Effective Refactor Plans:**
 
+## CRITICAL: Check Existing Repository Files First!
+**BEFORE creating any plan steps:**
+1. Use `list_java_classes()` tool to see all available Java files in the repository
+2. Use `analyze_java_class(file_path)` tool to examine ACTUAL method signatures and fields of each relevant class
+3. **NEVER assume methods, fields, or classes exist** without checking with these tools first
+4. If you need to use a class that doesn't exist, you MUST include a step to create it FIRST
+5. Check exact method parameter types and counts - don't call methods with wrong signatures
+6. Verify field names and types before using them
+
+**MANDATORY Tool Usage:**
+- Call `list_java_classes()` at the START of planning to see what exists
+- Call `analyze_java_class(path)` for EVERY class you plan to modify or reference
+- Example: Before calling `service.registerUser(name, email, password)`, check if `registerUser` actually takes 3 parameters!
+
+**Common Mistakes to Avoid:**
+- ❌ DON'T reference `UserRepository` if only `UserService` exists
+- ❌ DON'T call `registerUser(name, email, password)` if the method only accepts `registerUser(name, email)`
+- ❌ DON'T call `user.getPassword()` if User class only has `getName()` and `getEmail()`
+- ❌ DON'T use Spring Data JPA without adding the dependency first
+- ✅ DO use `analyze_java_class()` to check EXACT method signatures before referencing them
+- ✅ DO create missing classes/interfaces in earlier steps before using them in later steps
+- ✅ DO add Maven/Gradle dependencies before using their classes
+
 ## Step Design
 Each RefactorStep should:
 - Have a clear, specific action (e.g., "create_class", "add_spring_configuration")

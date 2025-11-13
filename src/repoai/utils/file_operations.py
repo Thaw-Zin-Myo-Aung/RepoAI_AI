@@ -65,6 +65,15 @@ async def apply_code_change(
         change_type_lower = change.change_type.lower()
 
         if change_type_lower in ("create", "created"):
+            # Auto-correct if file already exists - change CREATE to MODIFY
+            if file_path.exists():
+                logger.warning(
+                    f"File already exists but change_type is CREATE. "
+                    f"Auto-correcting to MODIFY: {change.file_path}"
+                )
+                if backup_dir:
+                    await _backup_file(file_path, Path(backup_dir), repo_path)
+                return await _modify_file(file_path, change.modified_content)
             return await _create_file(file_path, change.modified_content)
 
         elif change_type_lower in ("modify", "modified", "refactored", "moved"):

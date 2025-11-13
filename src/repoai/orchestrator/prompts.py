@@ -149,6 +149,7 @@ You will receive:
 - Formatting issues (code style violations)
 - Simple type mismatches (String vs. Integer)
 - Missing annotations (@Override, @Autowired)
+- **Test code compilation errors**: Tests reference old classes/methods that were refactored
 
 **2. LOGIC ERRORS (Medium Success Probability: 0.5-0.79)** → **retry** with modified plan:
 - Failed unit tests (assertion failures)
@@ -185,6 +186,17 @@ You will receive:
 - Compiler provides clear fix suggestion → High success probability
 - Error message is vague → Lower success probability
 - Multiple cascading errors → Risky retry, consider **modify**
+
+**CRITICAL: Test Code vs Main Code Errors:**
+- **Test code compilation errors**: Main code was refactored but test files weren't updated
+  * Example: `UserServiceTest.java` references `UserRepository` but `UserService.java` no longer uses it
+  * Action: **retry** with instructions to update test files to match refactored main code
+  * Success probability: 0.85 (high - tests just need to be synchronized)
+  * Instructions: "Update test file to remove references to UserRepository. Mock the new dependencies/methods used in refactored code."
+- **Main code compilation errors**: Actual implementation issues
+  * Example: `UserService.java` has missing imports or syntax errors
+  * Action: **retry** or **modify** based on error severity
+  * Different strategy needed - main code logic may need redesign
 
 **Decision Matrix:**
 

@@ -969,19 +969,83 @@ def build_transformer_prompt_streaming(
     prompt += """
 ## Instructions
 Generate the complete refactored code for the files listed above.
+
+**CRITICAL - MANDATORY Tool Usage:**
+Before modifying ANY existing Java file, you MUST:
+1. Call `analyze_java_class(file_path)` to understand its current structure
+2. Read the response to see what methods, fields, and interfaces already exist
+3. Preserve ALL existing functionality that is not being changed
+4. Only modify/add/remove what the refactoring step specifically requests
+
+Why this is critical:
+- Without analyzing first, you might remove existing methods that other code depends on
+- You might change method signatures that will break callers
+- You might miss important fields or dependencies
+- The code will fail to compile
+
+Example workflow for modifying UserService.java:
+```
+Step 1: analyze_java_class("src/main/java/com/example/app/UserService.java")
+        # Returns: methods=["registerUser(String name, String email)", "getAllUsers()"]
+        #          fields=["public List<User> users", "private int maxUsers"]
+
+Step 2: Generate modified code that:
+        ✓ Keeps registerUser(String name, String email) signature
+        ✓ Keeps getAllUsers() method
+        ✓ Keeps users and maxUsers fields
+        ✓ Only changes what the step asks (e.g., make users private, add getter)
+```
+
+**CRITICAL - Update Test Files When Modifying Main Code:**
+When you modify a main class file, you MUST also check and update its test files!
+
+Workflow for modifying a class:
+1. Analyze the main class: `analyze_java_class("src/main/java/.../UserService.java")`
+2. Find its test files: `find_test_files_for_class("src/main/java/.../UserService.java")`
+   - Returns: `["src/test/java/.../UserServiceTest.java"]`
+3. Analyze each test file: `analyze_java_class("src/test/java/.../UserServiceTest.java")`
+4. Generate modified main class (preserving existing functionality)
+5. **Generate modified test files** - update them to match refactored main code:
+   - If main class removed a dependency (e.g., UserRepository) → Remove from test mocks
+   - If main class changed method signature → Update test method calls
+   - If main class added new methods → Consider adding basic test coverage
+   - If main class changed return types → Update test assertions
+
+Why this is critical:
+- Test compilation errors are the #1 cause of validation failure
+- Tests reference old class structures after refactoring
+- Main code compiles but tests fail because they're out of sync
+
+Example: If you refactor UserService to remove UserRepository dependency:
+```
+Main code change: Remove UserRepository from UserService
+Test code change: Remove UserRepository mock from UserServiceTest, update constructor calls
+```
+
+**IMPORTANT - File Operation Rules:**
+- If the file already exists in the repository → use change_type="MODIFY"
+- If the file does NOT exist and you're creating it → use change_type="CREATE"
+- Use the get_file_context tool to check if a file exists before deciding
+- NEVER use CREATE for existing files - this will cause errors!
+
 For each file:
-1. Provide the full file path
-2. Generate the complete refactored code (not just snippets)
-3. Create a unified diff showing the changes
-4. Add a brief description of what changed
+1. Check if the file exists using get_file_context
+2. If it's a Java file that exists → Call analyze_java_class to understand its structure
+3. **If it's a main class → Call find_test_files_for_class to find test files**
+4. **For each test file found → Analyze and update it to match refactored main code**
+5. Provide the full file path
+6. Choose the correct change_type based on file existence
+7. Generate the complete refactored code (not just snippets) - preserving existing functionality
+8. Create a unified diff showing the changes
+9. Add a brief description of what changed
 
 ## Expected Output Format
 Return a CodeChanges object with a list of CodeChange items.
 Each CodeChange must include:
 - file_path: Full path to the file
-- change_type: "CREATE", "MODIFY", or "DELETE"
-- old_content: Original file content (if modifying/deleting)
-- new_content: Refactored file content (if creating/modifying)
+- change_type: "MODIFY" (if file exists) or "CREATE" (if new file) or "DELETE"
+- old_content: Original file content (for MODIFY/DELETE operations)
+- new_content: Refactored file content (for CREATE/MODIFY operations)
 - diff: Unified diff format
 - description: Brief explanation of changes
 """

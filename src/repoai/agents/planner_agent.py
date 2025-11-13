@@ -23,6 +23,7 @@ from repoai.dependencies import PlannerDependencies
 from repoai.explainability import RefactorMetadata
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import JobSpec, RefactorPlan
+from repoai.parsers.java_ast_parser import parse_java_file
 from repoai.utils.logger import get_logger
 
 from .prompts import (
@@ -375,6 +376,179 @@ Be thorough in risk assessment and mitigation strategies.
 
         logger.debug(f"Suggested {len(strategies)} mitigation strategies")
         return strategies
+
+    # Tool: Analyze existing Java class structure
+    @agent.tool
+    def analyze_java_class(
+        ctx: RunContext[PlannerDependencies], file_path: str
+    ) -> dict[str, list[str] | str | bool | None]:
+        """
+        Analyze an existing Java class to extract its structure: methods, fields, interfaces.
+
+        CRITICAL: ALWAYS use this tool before referencing any class/method in your plan!
+
+        Args:
+            file_path: Path to Java file relative to repository root (e.g., "src/main/java/com/example/User.java")
+
+        Returns:
+            dict: Class structure with:
+                - class_name (str): Name of the class
+                - package (str): Package name
+                - methods (list[str]): Method signatures (e.g., ["registerUser(String name, String email)", "getName()"])
+                - fields (list[str]): Field declarations (e.g., ["private String name", "private String email"])
+                - interfaces (list[str]): Implemented interfaces
+                - parent_class (str | None): Extended class if any
+                - is_interface (bool): Whether this is an interface
+                - error (str): Error message if parsing failed
+
+        Example:
+            structure = analyze_java_class("src/main/java/com/example/UserService.java")
+            # Returns: {
+            #   "class_name": "UserService",
+            #   "package": "com.example",
+            #   "methods": ["registerUser(String name, String email)", "getAllUsers()"],
+            #   "fields": ["private List<User> users"],
+            #   "interfaces": [],
+            #   "parent_class": null,
+            #   "is_interface": false
+            # }
+        """
+        try:
+            import os
+
+            deps = ctx.deps
+            repo_path = deps.repository_path
+
+            if not repo_path:
+                return {
+                    "error": "Repository path not configured",
+                    "class_name": "",
+                    "package": "",
+                    "methods": [],
+                    "fields": [],
+                    "interfaces": [],
+                    "parent_class": None,
+                    "is_interface": False,
+                }
+
+            # Construct full path
+            full_path = os.path.join(repo_path, file_path)
+
+            if not os.path.exists(full_path):
+                logger.warning(f"File not found: {full_path}")
+                return {
+                    "error": f"File not found: {file_path}",
+                    "class_name": "",
+                    "package": "",
+                    "methods": [],
+                    "fields": [],
+                    "interfaces": [],
+                    "parent_class": None,
+                    "is_interface": False,
+                }
+
+            # Read and parse Java file
+            with open(full_path, encoding="utf-8") as f:
+                code = f.read()
+
+            parsed = parse_java_file(code)
+
+            if not parsed:
+                return {
+                    "error": "Failed to parse Java file",
+                    "class_name": "",
+                    "package": "",
+                    "methods": [],
+                    "fields": [],
+                    "interfaces": [],
+                    "parent_class": None,
+                    "is_interface": False,
+                }
+
+            # Extract method signatures
+            method_sigs = []
+            for method in parsed.methods:
+                params = ", ".join([f"{ptype} {pname}" for ptype, pname in method.parameters])
+                sig = f"{method.name}({params})"
+                if method.return_type and method.return_type != "void":
+                    sig = f"{method.return_type} {sig}"
+                method_sigs.append(sig)
+
+            # Extract field declarations
+            field_decls = []
+            for field in parsed.fields:
+                visibility = (
+                    "private"
+                    if field.is_private
+                    else ("public" if field.is_public else "protected")
+                )
+                field_decls.append(f"{visibility} {field.type} {field.name}")
+
+            result = {
+                "class_name": parsed.name,
+                "package": parsed.package,
+                "methods": method_sigs,
+                "fields": field_decls,
+                "interfaces": parsed.implements,
+                "parent_class": parsed.extends,
+                "is_interface": parsed.is_interface,
+            }
+
+            logger.info(
+                f"Analyzed {file_path}: {len(method_sigs)} methods, {len(field_decls)} fields"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"Error analyzing {file_path}: {e}")
+            return {
+                "error": str(e),
+                "class_name": "",
+                "package": "",
+                "methods": [],
+                "fields": [],
+                "interfaces": [],
+                "parent_class": None,
+                "is_interface": False,
+            }
+
+    # Tool: List all Java classes in repository
+    @agent.tool
+    def list_java_classes(ctx: RunContext[PlannerDependencies]) -> list[dict[str, str]]:
+        """
+        List all Java classes in the repository with their paths.
+
+        Returns:
+            list[dict]: List of {name, path} dicts for each Java file
+
+        Example:
+            classes = list_java_classes()
+            # Returns: [
+            #   {"name": "User", "path": "src/main/java/com/example/User.java"},
+            #   {"name": "UserService", "path": "src/main/java/com/example/UserService.java"}
+            # ]
+        """
+        import os
+
+        deps = ctx.deps
+        repo_path = deps.repository_path
+
+        if not repo_path:
+            logger.warning("Repository path not configured")
+            return []
+
+        java_files = []
+
+        for root, _dirs, files in os.walk(repo_path):
+            for file in files:
+                if file.endswith(".java"):
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, repo_path)
+                    name = file.replace(".java", "")
+                    java_files.append({"name": name, "path": rel_path})
+
+        logger.debug(f"Found {len(java_files)} Java files in repository")
+        return java_files
 
     logger.info("Planner Agent created successfully.")
     return agent

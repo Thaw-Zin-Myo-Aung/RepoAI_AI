@@ -5,8 +5,12 @@ Each agent has its own dependency type to ensure type safety and
 make testing easier through dependency injection.
 """
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from repoai.api.models import GitHubCredentials
 
 from repoai.models import (
     CodeChanges,
@@ -192,6 +196,9 @@ class ValidatorDependencies:
     strict_mode: bool = False
     """If True, fail on any quality issues."""
 
+    progress_callback: Callable[[str], Awaitable[None]] | None = None
+    """Optional async callback to receive real-time build/test output."""
+
 
 # Dependencies for the PR Narrator Agent
 @dataclass
@@ -274,6 +281,9 @@ class OrchestratorDependencies:
 
     repository_path: str | None = None
     """Optional local repository path"""
+
+    github_credentials: "GitHubCredentials | None" = None
+    """GitHub credentials for commit/push operations (required for git operations stage)"""
 
     max_retries: int = 3
     """Maximum number of validation retry attempts"""

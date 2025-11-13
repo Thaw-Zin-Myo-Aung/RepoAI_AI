@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import difflib
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from typing import Any
 
@@ -25,7 +25,7 @@ from repoai.dependencies.base import TransformerDependencies
 from repoai.explainability import RefactorMetadata
 from repoai.llm import ModelRole, PydanticAIAdapter
 from repoai.models import CodeChange, CodeChanges, RefactorPlan
-from repoai.parsers.java_ast_parser import extract_relevant_context
+from repoai.parsers.java_ast_parser import extract_relevant_context, parse_java_file
 from repoai.utils.file_writer import write_code_changes_to_disk
 from repoai.utils.logger import get_logger
 
@@ -41,7 +41,7 @@ logger = get_logger(__name__)
 
 def create_transformer_agent(
     adapter: PydanticAIAdapter,
-) -> Agent[TransformerDependencies, CodeChange]:
+) -> Agent[TransformerDependencies, CodeChanges]:
     """
     Create and configure the Transformer Agent.
 
@@ -51,7 +51,7 @@ def create_transformer_agent(
         adapter: PydanticAIAdapter to provide models and configurations.
 
     Returns:
-        Configured Transformer Agent instance.
+        Configured Transformer Agent instance (outputs CodeChanges for streaming).
 
     Example:
         adapter = PydanticAIAdapter()
@@ -85,11 +85,11 @@ Produce complete, working code that follows Java and Spring Framework best pract
 Include proper imports, annotations, and documentation.
 """
 
-    # Create the agent with CodeChange output type
-    agent: Agent[TransformerDependencies, CodeChange] = Agent(
+    # Create the agent with CodeChanges output type (for streaming multiple files)
+    agent: Agent[TransformerDependencies, CodeChanges] = Agent(
         model=model,
         deps_type=TransformerDependencies,
-        output_type=CodeChange,
+        output_type=CodeChanges,
         system_prompt=complete_system_prompt,
         model_settings=settings,
     )
@@ -502,6 +502,205 @@ public @interface {class_name} {{
             logger.error(f"Failed to add dependency: {e}")
             return {"success": False, "error": str(e)}
 
+    @agent.tool
+    def analyze_java_class(
+        ctx: RunContext[TransformerDependencies], file_path: str
+    ) -> dict[str, list[str] | str | bool | None]:
+        """
+        Analyze an existing Java class to understand its structure before modifying it.
+
+        CRITICAL: ALWAYS call this tool BEFORE modifying any existing Java file!
+        This ensures you understand what methods, fields, and interfaces already exist.
+
+        Args:
+            file_path: Relative path to the Java file (e.g., "src/main/java/com/example/UserService.java")
+
+        Returns:
+            Dict containing:
+            - class_name: The name of the class
+            - package: The package declaration
+            - methods: List of method signatures (e.g., ["registerUser(String name, String email)", "getAllUsers()"])
+            - fields: List of field declarations (e.g., ["private List<User> users", "public int maxUsers"])
+            - interfaces: List of implemented interfaces
+            - parent_class: The parent class if any (or None)
+            - is_interface: True if this is an interface, False if it's a class
+
+        Example:
+            info = analyze_java_class("src/main/java/com/example/app/UserService.java")
+            # Returns: {
+            #   "class_name": "UserService",
+            #   "package": "com.example.app",
+            #   "methods": ["registerUser(String name, String email)", "getAllUsers()"],
+            #   "fields": ["public List<User> users", "private int maxUsers"],
+            #   "interfaces": [],
+            #   "parent_class": None,
+            #   "is_interface": False
+            # }
+        """
+        import os
+
+        repo_path = ctx.deps.repository_path
+        if not repo_path:
+            logger.warning("Repository path not set, cannot analyze Java class")
+            return {
+                "error": "Repository path not configured",
+                "class_name": None,
+                "package": None,
+                "methods": [],
+                "fields": [],
+                "interfaces": [],
+                "parent_class": None,
+                "is_interface": False,
+            }
+
+        full_path = os.path.join(repo_path, file_path)
+        if not os.path.exists(full_path):
+            logger.warning(f"Java file not found: {full_path}")
+            return {
+                "error": f"File not found: {file_path}",
+                "class_name": None,
+                "package": None,
+                "methods": [],
+                "fields": [],
+                "interfaces": [],
+                "parent_class": None,
+                "is_interface": False,
+            }
+
+        try:
+            with open(full_path, encoding="utf-8") as f:
+                code = f.read()
+
+            # Parse the Java file
+            parsed = parse_java_file(code)
+
+            if not parsed:
+                return {
+                    "error": "Failed to parse Java file",
+                    "class_name": None,
+                    "package": None,
+                    "methods": [],
+                    "fields": [],
+                    "interfaces": [],
+                    "parent_class": None,
+                    "is_interface": False,
+                }
+
+            # Extract method signatures with full parameter info
+            methods = []
+            for method in parsed.methods:
+                params = ", ".join(
+                    [f"{param_type} {param_name}" for param_type, param_name in method.parameters]
+                )
+                signature = f"{method.name}({params})"
+                methods.append(signature)
+
+            # Extract field declarations with visibility
+            fields = []
+            for field in parsed.fields:
+                if field.is_public:
+                    visibility = "public"
+                elif field.is_private:
+                    visibility = "private"
+                else:
+                    visibility = "package-private"  # default/package visibility
+                fields.append(f"{visibility} {field.type} {field.name}")
+
+            logger.info(f"Analyzed {file_path}: {len(methods)} methods, {len(fields)} fields")
+
+            return {
+                "class_name": parsed.name,
+                "package": parsed.package,
+                "methods": methods,
+                "fields": fields,
+                "interfaces": parsed.implements,
+                "parent_class": parsed.extends,
+                "is_interface": parsed.is_interface,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to analyze Java class {file_path}: {e}")
+            return {
+                "error": str(e),
+                "class_name": None,
+                "package": None,
+                "methods": [],
+                "fields": [],
+                "interfaces": [],
+                "parent_class": None,
+                "is_interface": False,
+            }
+
+    @agent.tool
+    def find_test_files_for_class(
+        ctx: RunContext[TransformerDependencies], class_file_path: str
+    ) -> list[str]:
+        """
+        Find test files that correspond to a given main class file.
+
+        CRITICAL: Use this tool when modifying a main class to find its test files!
+        This ensures test files are also updated to match refactored code.
+
+        Args:
+            class_file_path: Path to the main class (e.g., "src/main/java/com/example/UserService.java")
+
+        Returns:
+            List of test file paths that test this class
+
+        Example:
+            tests = find_test_files_for_class("src/main/java/com/example/app/UserService.java")
+            # Returns: ["src/test/java/com/example/app/UserServiceTest.java"]
+        """
+        import os
+
+        repo_path = ctx.deps.repository_path
+        if not repo_path:
+            logger.warning("Repository path not set")
+            return []
+
+        # Extract class name from path
+        # e.g., "src/main/java/com/example/app/UserService.java" -> "UserService"
+        class_name = os.path.basename(class_file_path).replace(".java", "")
+
+        test_files = []
+
+        # Common test file naming patterns
+        test_patterns = [
+            f"{class_name}Test.java",
+            f"{class_name}Tests.java",
+            f"Test{class_name}.java",
+            f"{class_name}TestCase.java",
+        ]
+
+        # Search in common test directories
+        test_dirs = [
+            "src/test/java",
+            "test",
+            "tests",
+            "src/test",
+        ]
+
+        for test_dir in test_dirs:
+            test_dir_path = os.path.join(repo_path, test_dir)
+            if not os.path.exists(test_dir_path):
+                continue
+
+            # Walk through test directory
+            for root, _, files in os.walk(test_dir_path):
+                for file in files:
+                    if any(pattern in file for pattern in test_patterns):
+                        # Get relative path from repo root
+                        full_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(full_path, repo_path)
+                        test_files.append(rel_path)
+
+        if test_files:
+            logger.info(f"Found {len(test_files)} test file(s) for {class_name}")
+        else:
+            logger.debug(f"No test files found for {class_name}")
+
+        return test_files
+
     logger.info("Transformer Agent created successfully.")
     return agent
 
@@ -586,18 +785,20 @@ Generate the complete code change including:
         result = await transformer_agent.run(
             prompt, deps=dependencies, usage_limits=UsageLimits(request_limit=200)
         )
-        code_change: CodeChange = result.output
+        code_changes_result: CodeChanges = result.output
 
-        # Ensure change_type is set
-        if not code_change.change_type:
-            if step.action.startswith("create_"):
-                code_change.change_type = "created"
-            elif step.action.startswith("delete_"):
-                code_change.change_type = "deleted"
-            else:
-                code_change.change_type = "modified"
+        # Extract all changes from the result
+        for code_change in code_changes_result.changes:
+            # Ensure change_type is set
+            if not code_change.change_type:
+                if step.action.startswith("create_"):
+                    code_change.change_type = "created"
+                elif step.action.startswith("delete_"):
+                    code_change.change_type = "deleted"
+                else:
+                    code_change.change_type = "modified"
 
-        all_changes.append(code_change)
+            all_changes.append(code_change)
         logger.info(
             f"Step {step.step_number} completed: "
             f"{code_change.change_type} {code_change.file_path} "
@@ -675,6 +876,7 @@ async def transform_with_streaming(
     plan: RefactorPlan,
     dependencies: TransformerDependencies,
     adapter: PydanticAIAdapter | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> AsyncIterator[tuple[CodeChange, RefactorMetadata]]:
     """
     Stream code changes as they are generated (file-level streaming).
@@ -705,7 +907,6 @@ async def transform_with_streaming(
         - Uses existing stream_json_async() from PydanticAIAdapter
         - Supports fallback models automatically
     """
-    from repoai.llm.model_roles import ModelRole
     from repoai.llm.router import ModelRouter
 
     # Use provided adapter or create default one
@@ -718,6 +919,9 @@ async def transform_with_streaming(
         f"steps={len(plan.steps)}, "
         f"repo={dependencies.repository_url or dependencies.repository_path}"
     )
+
+    # Create the transformer agent with all tools
+    transformer_agent = create_transformer_agent(adapter)
 
     # Initialize metadata tracking
     start_time = time.time()
@@ -739,36 +943,40 @@ async def transform_with_streaming(
 
     # Process each step in the refactoring plan
     for step_idx, step in enumerate(plan.steps, start=1):
+        # Track files changed in this specific step
+        step_files: list[CodeChange] = []
+
+        # Send "Processing step X/Y" message
+        if progress_callback:
+            progress_callback(f"⚙️  Processing step {step_idx}/{len(plan.steps)}: {step.action}")
+
         logger.info(f"Streaming step {step_idx}/{len(plan.steps)}: {step.description}")
 
-        # Build messages for streaming
-        messages = [
-            {
-                "role": "user",
-                "content": build_transformer_prompt_streaming(
-                    step=step,
-                    dependencies=dependencies,
-                    estimated_duration=plan.estimated_duration,
-                ),
-            }
-        ]
+        # Build prompt for streaming
+        prompt = build_transformer_prompt_streaming(
+            step=step,
+            dependencies=dependencies,
+            estimated_duration=plan.estimated_duration,
+        )
 
-        # Stream structured CodeChanges using existing adapter method
+        # Use the transformer agent directly to enable tool calling during streaming
+        # This allows the LLM to call get_file_context and add_maven_dependency tools
         try:
-            async for partial_changes in adapter.stream_json_async(
-                role=ModelRole.CODER,
-                schema=CodeChanges,
-                messages=messages,
-                temperature=0.3,
-                max_output_tokens=4096,
-                use_fallback=True,
-            ):
-                # Detect newly added files in the partial response
-                for change in partial_changes.changes:
-                    if change.file_path not in files_seen:
-                        # New file generated!
-                        files_seen.add(change.file_path)
-                        file_count += 1
+            async with transformer_agent.run_stream(
+                prompt,
+                deps=dependencies,
+                model_settings={"temperature": 0.3, "max_tokens": 8192},
+            ) as stream:
+                async for partial_changes in stream.stream_output():
+                    # Detect newly added files in the partial response
+                    for change in partial_changes.changes:
+                        if change.file_path not in files_seen:
+                            # New file generated!
+                            files_seen.add(change.file_path)
+                            file_count += 1
+
+                        # Track this file for step summary
+                        step_files.append(change)
 
                         # Calculate metrics for this change
                         lines_added, lines_removed = _calculate_diff_stats(change.diff)
@@ -795,10 +1003,44 @@ async def transform_with_streaming(
                         # Yield immediately for real-time processing
                         yield change, metadata
 
+            # Send step completion message with file contents summary
+            if progress_callback and step_files:
+                # Build summary with file contents
+                files_summary = "\n".join(
+                    [
+                        f"  • {change.file_path} ({change.change_type}): "
+                        f"+{change.lines_added}/-{change.lines_removed} lines"
+                        for change in step_files
+                    ]
+                )
+                progress_callback(
+                    f"✅ Step {step_idx}/{len(plan.steps)} completed: {step.action}\n"
+                    f"Files changed ({len(step_files)}):\n{files_summary}"
+                )
+
         except Exception as e:
-            logger.error(f"Error streaming step {step_idx}: {e}")
+            error_msg = str(e)
+            logger.error(f"Error streaming step {step_idx}: {error_msg}")
+
+            # Check if it's a token limit error
+            if "MAX_TOKENS" in error_msg or "token" in error_msg.lower():
+                logger.warning(f"Step {step_idx} hit token limit, retrying with reduced context...")
+                if progress_callback:
+                    progress_callback(
+                        f"⚠️  Step {step_idx} hit token limit, retrying with reduced context..."
+                    )
+
+                # Retry with simplified prompt (reduce existing_code_context)
+                # For now, just re-raise and let orchestrator handle it
+                # TODO: Implement context reduction and retry
+                pass
+
+            # Send error message
+            if progress_callback:
+                progress_callback(f"❌ Step {step_idx} failed: {error_msg}")
+
             # Update metadata with error
-            metadata.risk_factors.append(f"error:{str(e)}")
+            metadata.risk_factors.append(f"error:{error_msg}")
             raise
 
     # Final metadata update

@@ -5,6 +5,8 @@ Provides functions for:
 - Cloning GitHub repositories with authentication
 - Validating Java project structure
 - Cleaning up temporary repositories
+- Creating branches and committing changes
+- Pushing changes to remote repositories
 """
 
 import os
@@ -190,3 +192,203 @@ def get_repository_info(repo_path: Path) -> dict[str, object]:
         "java_file_count": len(java_files),
         "is_valid": validate_repository(repo_path),
     }
+
+
+def create_branch(
+    repo_path: Path,
+    branch_name: str,
+) -> None:
+    """
+    Create and checkout a new branch.
+
+    Args:
+        repo_path: Path to repository
+        branch_name: Name of the new branch
+
+    Raises:
+        GitRepositoryError: If branch creation fails
+
+    Example:
+        create_branch(repo_path, "repoai/add-jwt-auth-20251112")
+    """
+    try:
+        logger.info(f"Creating branch: {branch_name}")
+
+        # Create and checkout new branch
+        result = subprocess.run(
+            ["git", "checkout", "-b", branch_name],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            raise GitRepositoryError(f"Failed to create branch: {result.stderr}")
+
+        logger.info(f"Branch created and checked out: {branch_name}")
+
+    except subprocess.TimeoutExpired as exc:
+        raise GitRepositoryError("Branch creation timeout") from exc
+    except Exception as exc:
+        raise GitRepositoryError(f"Failed to create branch: {exc}") from exc
+
+
+def commit_changes(
+    repo_path: Path,
+    commit_message: str,
+    author_name: str = "RepoAI Bot",
+    author_email: str = "repoai@bot.com",
+) -> str:
+    """
+    Stage all changes and create a commit.
+
+    Args:
+        repo_path: Path to repository
+        commit_message: Commit message (can be multi-line)
+        author_name: Git author name (default: RepoAI Bot)
+        author_email: Git author email (default: repoai@bot.com)
+
+    Returns:
+        Commit hash (SHA)
+
+    Raises:
+        GitRepositoryError: If commit fails
+
+    Example:
+        commit_hash = commit_changes(
+            repo_path,
+            "feat: Add JWT authentication\\n\\nImplemented JWT service and security config",
+            "John Doe",
+            "john@example.com"
+        )
+        print(f"Committed: {commit_hash[:7]}")
+    """
+    try:
+        logger.info(f"Committing changes: {commit_message[:50]}...")
+
+        # Stage all changes
+        result = subprocess.run(
+            ["git", "add", "-A"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            raise GitRepositoryError(f"Failed to stage changes: {result.stderr}")
+
+        # Set git config for commit
+        subprocess.run(
+            ["git", "config", "user.name", author_name],
+            cwd=repo_path,
+            check=True,
+            timeout=10,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", author_email],
+            cwd=repo_path,
+            check=True,
+            timeout=10,
+        )
+
+        # Create commit
+        result = subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            # Check if there are no changes to commit
+            if "nothing to commit" in result.stdout.lower():
+                logger.warning("No changes to commit")
+                return ""
+            raise GitRepositoryError(f"Failed to commit: {result.stderr}")
+
+        # Get commit hash
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        commit_hash = result.stdout.strip()
+        logger.info(f"Changes committed successfully: {commit_hash[:7]}")
+        return commit_hash
+
+    except subprocess.TimeoutExpired as exc:
+        raise GitRepositoryError("Commit timeout") from exc
+    except Exception as exc:
+        raise GitRepositoryError(f"Failed to commit changes: {exc}") from exc
+
+
+def push_to_remote(
+    repo_path: Path,
+    branch_name: str,
+    access_token: str,
+    repo_url: str,
+) -> None:
+    """
+    Push branch to remote repository using access token for authentication.
+
+    Args:
+        repo_path: Path to repository
+        branch_name: Name of branch to push
+        access_token: GitHub personal access token
+        repo_url: Repository URL (https://github.com/user/repo)
+
+    Raises:
+        GitRepositoryError: If push fails
+
+    Example:
+        push_to_remote(
+            repo_path,
+            "repoai/add-jwt-auth-20251112",
+            "ghp_xxxxx",
+            "https://github.com/user/repo"
+        )
+    """
+    try:
+        logger.info(f"Pushing branch to remote: {branch_name}")
+
+        # Inject access token into URL for authentication
+        # https://github.com/user/repo → https://token@github.com/user/repo
+        if access_token and access_token != "mock_token_for_testing":
+            auth_url = repo_url.replace("https://", f"https://{access_token}@")
+        else:
+            auth_url = repo_url
+            logger.warning("Using mock token - push may fail")
+
+        # Set remote URL with authentication
+        subprocess.run(
+            ["git", "remote", "set-url", "origin", auth_url],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        # Push branch to remote
+        result = subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
+        )
+
+        if result.returncode != 0:
+            raise GitRepositoryError(f"Failed to push: {result.stderr}")
+
+        logger.info(f"Branch pushed successfully to remote: {branch_name}")
+
+    except subprocess.TimeoutExpired as exc:
+        raise GitRepositoryError("Push timeout (>5 minutes)") from exc
+    except Exception as exc:
+        raise GitRepositoryError(f"Failed to push to remote: {exc}") from exc

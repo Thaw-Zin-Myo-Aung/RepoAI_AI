@@ -13,15 +13,21 @@ Supports both Maven and Gradle build systems with automatic detection.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import subprocess
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from repoai.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Progress callback type for streaming build output
+ProgressCallback = Callable[[str], Awaitable[None]]
 
 
 # ============================================================================
@@ -215,6 +221,41 @@ async def detect_build_tool(repo_path: str | Path) -> BuildToolInfo:
 
 
 # ============================================================================
+# Streaming Helpers
+# ============================================================================
+
+
+async def _stream_process_output(stdout: Any) -> AsyncIterator[str]:
+    """
+    Asynchronously stream output from subprocess line by line.
+
+    This function reads from a subprocess stdout/stderr stream and yields
+    lines as they arrive, enabling real-time progress updates.
+
+    Args:
+        stdout: subprocess.PIPE stdout/stderr stream
+
+    Yields:
+        Output lines as they arrive from the process
+
+    Example:
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
+        async for line in _stream_process_output(process.stdout):
+            await progress_callback(line)
+    """
+    loop = asyncio.get_event_loop()
+
+    while True:
+        # Read line in thread pool to avoid blocking event loop
+        line = await loop.run_in_executor(None, stdout.readline)
+
+        if not line:
+            break
+
+        yield line
+
+
+# ============================================================================
 # Compilation
 # ============================================================================
 
@@ -224,15 +265,17 @@ async def compile_java_project(
     build_tool_info: BuildToolInfo | None = None,
     clean: bool = False,
     skip_tests: bool = True,
+    progress_callback: ProgressCallback | None = None,
 ) -> CompilationResult:
     """
-    Compile a Java project using Maven or Gradle.
+    Compile a Java project using Maven or Gradle with optional real-time output streaming.
 
     Args:
         repo_path: Path to the Java project root
         build_tool_info: Optional pre-detected build tool info
         clean: Whether to clean before compiling
         skip_tests: Whether to skip running tests during compilation
+        progress_callback: Optional async callback to receive output lines in real-time
 
     Returns:
         CompilationResult with success status and error details
@@ -243,7 +286,6 @@ async def compile_java_project(
             for error in result.errors:
                 print(f"Error: {error}")
     """
-    import time
 
     repo_path = Path(repo_path)
     start_time = time.time()
@@ -289,32 +331,77 @@ async def compile_java_project(
 
     logger.debug(f"Running command: {' '.join(command)}")
 
-    # Execute compilation
+    # Execute compilation with streaming support
     try:
-        result = subprocess.run(
-            command,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=300,  # 5 minute timeout
-        )
+        if progress_callback:
+            # Use Popen for streaming output
+            process = subprocess.Popen(
+                command,
+                cwd=repo_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
+                text=True,
+                bufsize=1,  # Line buffered
+            )
 
-        duration_ms = (time.time() - start_time) * 1000
+            output_lines = []
 
-        # Parse output for errors
-        errors, warnings = _parse_build_output(result.stdout + result.stderr, build_tool_info.tool)
+            # Stream output line by line
+            if process.stdout:
+                async for line in _stream_process_output(process.stdout):
+                    output_lines.append(line)
+                    # Send to progress callback
+                    await progress_callback(line)
 
-        success = result.returncode == 0
+            # Wait for completion
+            return_code = process.wait(timeout=300)
 
-        compilation_result = CompilationResult(
-            success=success,
-            build_tool=build_tool_info.tool,
-            duration_ms=duration_ms,
-            errors=errors,
-            warnings=warnings,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Parse errors from collected output
+            full_output = "".join(output_lines)
+            errors, warnings = _parse_build_output(full_output, build_tool_info.tool)
+
+            success = return_code == 0
+
+            compilation_result = CompilationResult(
+                success=success,
+                build_tool=build_tool_info.tool,
+                duration_ms=duration_ms,
+                errors=errors,
+                warnings=warnings,
+                stdout=full_output,
+                stderr="",  # Merged into stdout
+            )
+
+        else:
+            # No streaming - use traditional subprocess.run
+            result = subprocess.run(
+                command,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Parse output for errors
+            errors, warnings = _parse_build_output(
+                result.stdout + result.stderr, build_tool_info.tool
+            )
+
+            success = result.returncode == 0
+
+            compilation_result = CompilationResult(
+                success=success,
+                build_tool=build_tool_info.tool,
+                duration_ms=duration_ms,
+                errors=errors,
+                warnings=warnings,
+                stdout=result.stdout,
+                stderr=result.stderr,
+            )
 
         logger.info(str(compilation_result))
         return compilation_result
@@ -474,14 +561,16 @@ async def run_java_tests(
     repo_path: str | Path,
     build_tool_info: BuildToolInfo | None = None,
     test_pattern: str | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> TestResult:
     """
-    Run JUnit tests in a Java project.
+    Run JUnit tests in a Java project with optional real-time output streaming.
 
     Args:
         repo_path: Path to the Java project root
         build_tool_info: Optional pre-detected build tool info
         test_pattern: Optional pattern to filter tests (e.g., "*ServiceTest")
+        progress_callback: Optional async callback to receive output lines in real-time
 
     Returns:
         TestResult with test outcomes and failure details
@@ -492,7 +581,6 @@ async def run_java_tests(
         for failure in result.failures:
             print(f"Failed: {failure}")
     """
-    import time
 
     repo_path = Path(repo_path)
     start_time = time.time()
@@ -524,37 +612,83 @@ async def run_java_tests(
 
     logger.debug(f"Running command: {' '.join(command)}")
 
-    # Execute tests
+    # Execute tests with streaming support
     try:
-        result = subprocess.run(
-            command,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 minute timeout for tests
-        )
+        if progress_callback:
+            # Use Popen for streaming output
+            process = subprocess.Popen(
+                command,
+                cwd=repo_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
+                text=True,
+                bufsize=1,  # Line buffered
+            )
 
-        duration_ms = (time.time() - start_time) * 1000
+            output_lines = []
 
-        # Parse test output
-        test_stats, failures = _parse_test_output(
-            result.stdout + result.stderr, build_tool_info.tool
-        )
+            # Stream output line by line
+            if process.stdout:
+                async for line in _stream_process_output(process.stdout):
+                    output_lines.append(line)
+                    # Send to progress callback
+                    await progress_callback(line)
 
-        success = result.returncode == 0
+            # Wait for completion
+            return_code = process.wait(timeout=600)
 
-        test_result = TestResult(
-            success=success,
-            build_tool=build_tool_info.tool,
-            duration_ms=duration_ms,
-            tests_run=test_stats.get("run", 0),
-            tests_passed=test_stats.get("passed", 0),
-            tests_failed=test_stats.get("failed", 0),
-            tests_skipped=test_stats.get("skipped", 0),
-            failures=failures,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Parse test results from collected output
+            full_output = "".join(output_lines)
+            test_stats, failures = _parse_test_output(full_output, build_tool_info.tool)
+
+            success = return_code == 0
+
+            test_result = TestResult(
+                success=success,
+                build_tool=build_tool_info.tool,
+                duration_ms=duration_ms,
+                tests_run=test_stats.get("run", 0),
+                tests_passed=test_stats.get("passed", 0),
+                tests_failed=test_stats.get("failed", 0),
+                tests_skipped=test_stats.get("skipped", 0),
+                failures=failures,
+                stdout=full_output,
+                stderr="",  # Merged into stdout
+            )
+
+        else:
+            # No streaming - use traditional subprocess.run
+            result = subprocess.run(
+                command,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout for tests
+            )
+
+            duration_ms = (time.time() - start_time) * 1000
+
+            # Parse test output
+            test_stats, failures = _parse_test_output(
+                result.stdout + result.stderr, build_tool_info.tool
+            )
+
+            success = result.returncode == 0
+
+            test_result = TestResult(
+                success=success,
+                build_tool=build_tool_info.tool,
+                duration_ms=duration_ms,
+                tests_run=test_stats.get("run", 0),
+                tests_passed=test_stats.get("passed", 0),
+                tests_failed=test_stats.get("failed", 0),
+                tests_skipped=test_stats.get("skipped", 0),
+                failures=failures,
+                stdout=result.stdout,
+                stderr=result.stderr,
+            )
 
         logger.info(str(test_result))
         return test_result
