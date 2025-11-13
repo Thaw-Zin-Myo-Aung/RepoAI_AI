@@ -241,7 +241,7 @@ class ChatOrchestrator(OrchestratorAgent):
 
         while True:
             # Build plan summary
-            summary = self._build_plan_summary(plan)
+            summary = self._build_plan_summary()
 
             # Send plan to user
             self.send_message(f"\n📋 **Refactoring Plan**\n{summary}")
@@ -380,8 +380,12 @@ class ChatOrchestrator(OrchestratorAgent):
 
         self.send_message("✓ Plan regenerated with your modifications")
 
-    def _build_plan_summary(self, plan: RefactorPlan) -> str:
+    def _build_plan_summary(self) -> str:
         """Build human-readable plan summary."""
+        if not self.state.plan:
+            return "Plan not available"
+
+        plan = self.state.plan
         lines = [
             f"**Plan ID:** {plan.plan_id}",
             f"**Total Steps:** {plan.total_steps}",
