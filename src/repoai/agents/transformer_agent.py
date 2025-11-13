@@ -1022,18 +1022,34 @@ async def transform_with_streaming(
             error_msg = str(e)
             logger.error(f"Error streaming step {step_idx}: {error_msg}")
 
-            # Check if it's a token limit error
-            if "MAX_TOKENS" in error_msg or "token" in error_msg.lower():
-                logger.warning(f"Step {step_idx} hit token limit, retrying with reduced context...")
+            # Check if it's a context/token related error
+            is_context_error = any(
+                pattern in error_msg
+                for pattern in [
+                    "MALFORMED_FUNCTION_CALL",
+                    "MAX_TOKENS",
+                    "token limit",
+                    "context length",
+                ]
+            )
+
+            if is_context_error:
+                logger.warning(
+                    f"Step {step_idx} hit context limit (MALFORMED_FUNCTION_CALL or token error), "
+                    "retrying with reduced context..."
+                )
                 if progress_callback:
                     progress_callback(
-                        f"⚠️  Step {step_idx} hit token limit, retrying with reduced context..."
+                        f"⚠️  Step {step_idx} context too large, simplifying and retrying..."
                     )
 
-                # Retry with simplified prompt (reduce existing_code_context)
-                # For now, just re-raise and let orchestrator handle it
                 # TODO: Implement context reduction and retry
-                pass
+                # For now, provide helpful error message
+                error_msg = (
+                    f"Context too large for step {step_idx}. "
+                    "The model cannot reliably call tools with this much context. "
+                    "Try breaking this step into smaller sub-steps."
+                )
 
             # Send error message
             if progress_callback:
