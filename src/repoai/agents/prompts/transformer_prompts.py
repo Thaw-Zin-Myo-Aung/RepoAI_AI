@@ -959,7 +959,27 @@ def build_transformer_prompt_streaming(
 ## Context
 **Repository**: {dependencies.repository_url or dependencies.repository_path or 'N/A'}
 **Java Version**: {dependencies.java_version}
+"""
 
+    # Add fix instructions if this is a retry scenario
+    if dependencies.fix_instructions:
+        prompt += f"""
+## ⚠️ FIX INSTRUCTIONS (RETRY ATTEMPT)
+**Previous attempt had validation errors. You MUST follow these specific fix instructions:**
+
+{dependencies.fix_instructions}
+
+**CRITICAL**: The instructions above tell you exactly what was wrong in the previous attempt.
+Make sure to address ALL issues mentioned before generating code. Pay special attention to:
+- Missing classes that need to be created
+- Missing methods that need to be added
+- Wrong method signatures that need to be fixed
+- Missing imports or dependencies
+- Test files that need to match refactored main code
+
+"""
+
+    prompt += """
 ## Files to Process
 """
 

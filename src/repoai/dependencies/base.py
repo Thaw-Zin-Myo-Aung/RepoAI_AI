@@ -149,6 +149,9 @@ class TransformerDependencies:
     output_path: str | None = None
     """Output directory path (defaults to /tmp/repoai if None)"""
 
+    fix_instructions: str | None = None
+    """Optional fix instructions for retry scenarios (to fix validation errors)"""
+
 
 # Dependencies for the Validator Agent
 @dataclass

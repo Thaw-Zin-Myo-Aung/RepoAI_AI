@@ -269,8 +269,13 @@ class OrchestratorAgent:
 
             # Stage 6: Git Operations (if we have GitHub credentials)
             if self.deps.github_credentials:
-                self._send_progress("🔀 Stage 6: Executing git operations...")
+                self._send_progress(
+                    "🔀 Stage 6: Executing git operations...", event_type="stage_started"
+                )
                 await self._run_git_operations_stage()
+
+                # Give time for git operation messages to be sent
+                await asyncio.sleep(0.1)
 
                 # Build branch URL for final message
                 repo_url = self.deps.github_credentials.repository_url.rstrip("/")
@@ -278,7 +283,14 @@ class OrchestratorAgent:
                     repo_url = repo_url[:-4]
                 branch_url = f"{repo_url}/tree/{self.state.git_branch_name}"
 
-                self._send_progress("✅ Changes pushed to GitHub")
+                self._send_progress(
+                    "✅ Git operations completed",
+                    event_type="stage_completed",
+                    additional_data={"branch_url": branch_url},
+                )
+
+            # Give time for all messages to flush before completion
+            await asyncio.sleep(0.1)
 
             # Mark as complete
             self.state.stage = PipelineStage.COMPLETE
@@ -289,7 +301,7 @@ class OrchestratorAgent:
             completion_msg = (
                 f"🎉 Refactoring completed successfully! ({self.state.elapsed_time_ms/1000:.1f}s)"
             )
-            self._send_progress(completion_msg)
+            self._send_progress(completion_msg, event_type="pipeline_completed")
 
             if self.deps.github_credentials and self.state.git_branch_name:
                 # Send branch link as final message
@@ -297,7 +309,11 @@ class OrchestratorAgent:
                 if repo_url.endswith(".git"):
                     repo_url = repo_url[:-4]
                 branch_url = f"{repo_url}/tree/{self.state.git_branch_name}"
-                self._send_progress(f"📋 Review your changes: {branch_url}")
+                self._send_progress(
+                    f"📋 Review your changes: {branch_url}",
+                    event_type="branch_link",
+                    additional_data={"branch_url": branch_url},
+                )
 
             logger.info(
                 f"Pipeline completed successfully: "
@@ -703,6 +719,15 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
             output_path=self.deps.output_path,
         )
 
+        # Add fix instructions to dependencies if available (for retry scenarios)
+        if self.state.fix_instructions:
+            logger.info(
+                f"Including fix instructions in transformer context ({len(self.state.fix_instructions)} chars)"
+            )
+            # Store fix instructions in a way transformer can access them
+            # We'll pass them through the dependencies
+            transformer_deps.fix_instructions = self.state.fix_instructions
+
         # Track changes and progress
         all_changes: list[CodeChange] = []
         files_applied = 0
@@ -1031,7 +1056,7 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
                 for method in missing_methods:
                     error_context += f"  - {method} (needs to be added to existing class)\n"
 
-            analysis_prompt = f"""You are analyzing validation errors in generated Java code.
+            analysis_prompt = f"""You are analyzing validation errors in generated Java code to provide SPECIFIC fix instructions.
 
 **Validation Issues:**
 {error_summary}
@@ -1043,36 +1068,60 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
 - Steps: {self.state.plan.total_steps if self.state.plan else 0}
 - Risk: {self.state.plan.risk_assessment.overall_risk_level if self.state.plan else 0}/10
 
-**CRITICAL INSTRUCTIONS FOR FIXING:**
+**YOUR TASK:**
+Analyze the errors and provide SPECIFIC, ACTIONABLE fix instructions that can be directly applied.
 
-If you see "cannot find symbol" errors:
-1. **Missing Classes**: Create the missing class files BEFORE modifying code that uses them
-   - Example: If code uses `UserRepository` but it doesn't exist, create UserRepository.java first
-   - Use proper Spring annotations (@Repository, @Service, etc.)
+**CRITICAL RULES FOR YOUR FIX INSTRUCTIONS:**
+
+1. **DO NOT regenerate from scratch** - Only fix what's broken
+2. **Be SPECIFIC** - Mention exact file paths, class names, method signatures
+3. **Order matters** - List fixes in dependency order (create missing classes first, then fix code that uses them)
+4. **Focus on TEST ERRORS** - Most failures are in test files that don't match refactored main code
+
+**COMMON ERROR PATTERNS AND HOW TO FIX THEM:**
+
+**Pattern 1: Missing class symbols (e.g., "cannot find symbol: class UserRepository")**
+→ FIX: The test file is trying to mock/use a class that doesn't exist or was removed
+   - If it's a test mock that's no longer needed (class was removed from main code):
+     * Remove the @Mock annotation and field from test class
+     * Remove it from all test method parameters
+     * Update test methods to not use this mock
+   - If it's actually needed: Create the class first
+
+**Pattern 2: Missing annotation (e.g., "cannot find symbol: class MockitoExtension")**
+→ FIX: Missing import or missing Maven dependency
+   - Add import: `import org.mockito.junit.jupiter.MockitoExtension;`
+   - Verify dependency exists in pom.xml
+
+**Pattern 3: Wrong constructor arguments (e.g., "required: no arguments, found: int")**
+→ FIX: Test is calling old constructor signature, but main class constructor changed
+   - Update test to use new constructor signature
+   - Example: If UserService now has no-arg constructor, change `new UserService(100)` to `new UserService()`
+
+**Pattern 4: Test file doesn't match refactored main class**
+→ FIX: Most common issue! When you refactor main code, tests break
+   - If main class removed a dependency → Remove it from test mocks
+   - If main class changed method signature → Update test calls
+   - If main class changed constructor → Update test instantiation
+
+**OUTPUT FORMAT:**
+Provide instructions as a numbered list of SPECIFIC actions:
+
+1. **File: [exact file path]**
+   - Problem: [what's wrong]
+   - Fix: [exactly what to change]
+   - Example: Change line 15 from `new UserService(100)` to `new UserService()`
+
+2. **File: [exact file path]**
+   - Problem: [what's wrong]
+   - Fix: [exactly what to change]
    
-2. **Missing Methods**: Add missing methods to existing classes
-   - Example: If code calls `user.getPassword()` but User only has getName/getEmail, add getPassword() method
-   - Match expected return types and parameters
+Focus on the ROOT CAUSE, not symptoms. If tests are broken, the root cause is usually:
+- Test file wasn't updated after refactoring main class
+- Test is mocking classes that were removed
+- Test is using old method signatures
 
-3. **Missing Imports**: Add required import statements
-   - Spring Framework classes need proper imports
-   - Check if Maven/Gradle dependencies are needed
-
-4. **Wrong Method Signatures**: Fix method calls to match actual signatures
-   - Example: If `registerUser(User user)` is called but method signature is `registerUser(String name, String email)`, fix the call
-
-**Your Task:**
-1. Analyze the validation errors above
-2. Identify what classes/methods/fields are missing
-3. Provide SPECIFIC step-by-step instructions to create missing components
-4. Order the fixes correctly: Create dependencies first, then modify code that uses them
-
-**Output Format:**
-Provide clear, actionable fix instructions organized as:
-1. CREATE MISSING CLASSES: List each class file to create with purpose
-2. ADD MISSING METHODS: List methods to add to existing classes
-3. FIX IMPORTS: List imports to add
-4. UPDATE CODE: List modifications needed to fix method calls
+**Now analyze the errors above and provide SPECIFIC fix instructions:**
 """
 
             # Use PLANNER role for intelligent analysis
@@ -1086,12 +1135,19 @@ Provide clear, actionable fix instructions organized as:
             logger.info(f"LLM analysis complete: {len(fix_instructions)} chars")
             logger.debug(f"Fix instructions: {fix_instructions[:500]}...")
 
+        # Store fix instructions in state for transformer to use
+        self.state.fix_instructions = fix_instructions
+        logger.info("Stored fix instructions in pipeline state")
+
         # Re-run Transformer with updated instructions
         # (In practice, you'd modify the plan or add context to transformer_deps)
         logger.info("Re-running Transformer Agent with fix instructions (streaming mode)...")
 
         # Use streaming transformation for retry as well
         await self._run_transformation_stage_streaming()
+
+        # Clear fix instructions after use
+        self.state.fix_instructions = None
 
         logger.info("Code regenerated with fix instructions")
 
@@ -1799,14 +1855,22 @@ Provide clear, actionable fix instructions organized as:
             )
 
             # Step 1: Create branch
-            self._send_progress(f"🌿 Creating branch: {branch_name}")
+            self._send_progress(
+                f"🌿 Creating branch: {branch_name}",
+                event_type="git_operation",
+                additional_data={"operation": "create_branch", "branch_name": branch_name},
+            )
             logger.info(f"Creating branch: {branch_name}")
 
             create_branch(repo_path, branch_name)
             self.state.git_branch_name = branch_name
 
             # Notify user: Branch created
-            self._send_progress(f"✅ Branch created: {branch_name}")
+            self._send_progress(
+                f"✅ Branch created: {branch_name}",
+                event_type="git_operation",
+                additional_data={"operation": "branch_created", "branch_name": branch_name},
+            )
             logger.info(f"✅ Branch '{branch_name}' created successfully")
 
             # Step 2: Commit changes
@@ -1819,7 +1883,11 @@ Provide clear, actionable fix instructions organized as:
                 str(commit_message_raw) if commit_message_raw else "RepoAI automated refactoring"
             )
 
-            self._send_progress(f"💾 Committing changes: {commit_message[:50]}...")
+            self._send_progress(
+                f"💾 Committing changes: {commit_message[:50]}...",
+                event_type="git_operation",
+                additional_data={"operation": "commit", "message": commit_message[:100]},
+            )
             logger.info(f"Committing changes: {commit_message[:100]}")
 
             # Use user info if available, otherwise defaults
@@ -1830,11 +1898,23 @@ Provide clear, actionable fix instructions organized as:
             self.state.git_commit_hash = commit_hash
 
             # Notify user: Committed
-            self._send_progress(f"✅ Changes committed: {commit_hash[:8]}")
+            self._send_progress(
+                f"✅ Changes committed: {commit_hash[:8]}",
+                event_type="git_operation",
+                additional_data={
+                    "operation": "commit_created",
+                    "commit_hash": commit_hash,
+                    "short_hash": commit_hash[:8],
+                },
+            )
             logger.info(f"✅ Created commit: {commit_hash}")
 
             # Step 3: Push to remote
-            self._send_progress(f"📤 Pushing to remote: {branch_name}")
+            self._send_progress(
+                f"📤 Pushing to remote: {branch_name}",
+                event_type="git_operation",
+                additional_data={"operation": "push", "branch_name": branch_name},
+            )
             logger.info(f"Pushing branch '{branch_name}' to remote")
 
             push_to_remote(
@@ -1854,8 +1934,20 @@ Provide clear, actionable fix instructions organized as:
             branch_url = f"{repo_url}/tree/{branch_name}"
 
             # Notify user: Push successful with link
-            self._send_progress("✅ Successfully pushed to remote!")
-            self._send_progress(f"🔗 View your changes: {branch_url}")
+            self._send_progress(
+                "✅ Successfully pushed to remote!",
+                event_type="git_operation",
+                additional_data={
+                    "operation": "push_completed",
+                    "branch_name": branch_name,
+                    "branch_url": branch_url,
+                },
+            )
+            self._send_progress(
+                f"🔗 View your changes: {branch_url}",
+                event_type="git_operation",
+                additional_data={"operation": "branch_url", "url": branch_url},
+            )
             logger.info(f"✅ Successfully pushed to {repo_url}")
             logger.info(f"🔗 Branch URL: {branch_url}")
 

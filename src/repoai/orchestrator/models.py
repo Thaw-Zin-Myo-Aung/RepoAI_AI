@@ -211,6 +211,10 @@ class PipelineState:
     git_push_status: str | None = None
     """Status of git push: 'pending', 'pushed', or 'failed'"""
 
+    # Fix instructions for retry
+    fix_instructions: str | None = None
+    """Instructions for fixing validation errors (used during retry)"""
+
     @property
     def elapsed_time_ms(self) -> float:
         """Calculate elapsed time in milliseconds."""
