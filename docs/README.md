@@ -9,7 +9,7 @@ RepoAI documentation and guides.
 
 ## Quick Links
 
-- [API Documentation](http://localhost:8000/docs) - Interactive API docs (when server running)
+- - API Documentation – Run the server and visit `/docs` in your browser to see the interactive API docs.
 - [Tests README](../tests/README.md) - How to run tests
 - [Scripts README](../scripts/README.md) - Available utility scripts
 
