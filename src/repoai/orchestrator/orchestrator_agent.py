@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -707,12 +708,18 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
             f"time={duration_ms:.0f}ms"
         )
 
-    async def _run_transformation_stage_streaming(self) -> None:
+    async def _run_transformation_stage_streaming(self, is_retry: bool = False) -> None:
         """
         Run Transformer Agent with streaming and real-time file application.
 
         This version streams code changes as they're generated and applies them
         immediately to the cloned repository.
+
+        Note: This should only be called for initial transformation. On validation failures,
+              use generate_fixes_for_errors() for targeted fixes instead.
+
+        Args:
+            is_retry: Deprecated parameter, kept for backward compatibility
         """
         from repoai.agents.transformer_agent import transform_with_streaming
         from repoai.dependencies import TransformerDependencies
@@ -726,14 +733,25 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
         self.state.stage = PipelineStage.TRANSFORMATION
         stage_start = time.time()
 
-        logger.info("Running Transformer Agent (streaming mode)...")
+        if is_retry:
+            logger.info("Running Transformer Agent (retry mode - fixing validation errors)...")
+        else:
+            logger.info("Running Transformer Agent (streaming mode)...")
 
-        # Create backup before applying changes
+        # Create backup before applying changes (only on first run, not retry)
         from pathlib import Path
 
         repo_path = Path(self.deps.repository_path)
-        backup_dir = await create_backup_directory(repo_path)
-        logger.info(f"Created backup: {backup_dir}")
+
+        if is_retry and hasattr(self.state, "backup_directory") and self.state.backup_directory:
+            # Reuse existing backup for retry
+            backup_dir = Path(self.state.backup_directory)
+            logger.info(f"Reusing existing backup for retry: {backup_dir}")
+        else:
+            # Create new backup for first transformation
+            backup_dir = await create_backup_directory(repo_path)
+            self.state.backup_directory = str(backup_dir)
+            logger.info(f"Created backup: {backup_dir}")
 
         # Prepare dependencies
         transformer_deps = TransformerDependencies(
@@ -1074,10 +1092,10 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
         self, validation_result: ValidationResult, llm_modifications: str | None = None
     ) -> None:
         """
-        Attempt to fix validation errors using LLM analysis.
+        Attempt to fix validation errors using targeted fix generation.
 
         Uses PLANNER role model to analyze errors and suggest fixes,
-        then re-runs Transformer agent with updated instructions.
+        then generates ONLY fixes for the broken files (not all files).
 
         Args:
             validation_result: Validation result with errors
@@ -1190,21 +1208,70 @@ Focus on the ROOT CAUSE, not symptoms. If tests are broken, the root cause is us
             logger.info(f"LLM analysis complete: {len(fix_instructions)} chars")
             logger.debug(f"Fix instructions: {fix_instructions[:500]}...")
 
-        # Store fix instructions in state for transformer to use
-        self.state.fix_instructions = fix_instructions
-        logger.info("Stored fix instructions in pipeline state")
+        # Generate TARGETED fixes for broken files only (not all files)
+        logger.info("Generating targeted fixes for broken files...")
 
-        # Re-run Transformer with updated instructions
-        # (In practice, you'd modify the plan or add context to transformer_deps)
-        logger.info("Re-running Transformer Agent with fix instructions (streaming mode)...")
+        from repoai.agents.transformer_fix_agent import generate_fixes_for_errors
+        from repoai.dependencies import TransformerDependencies
+        from repoai.utils.file_operations import apply_code_change
 
-        # Use streaming transformation for retry as well
-        await self._run_transformation_stage_streaming()
+        # Validate required state
+        if not self.state.plan:
+            raise RuntimeError("Plan is required for fix generation")
+        if not self.deps.repository_path:
+            raise RuntimeError("Repository path is required for fix generation")
 
-        # Clear fix instructions after use
-        self.state.fix_instructions = None
+        # Prepare dependencies
+        transformer_deps = TransformerDependencies(
+            plan=self.state.plan,
+            repository_path=self.deps.repository_path,
+            repository_url=self.deps.repository_url,
+            write_to_disk=True,
+            output_path=self.deps.output_path,
+        )
 
-        logger.info("Code regenerated with fix instructions")
+        # Generate fixes
+        fixes = await generate_fixes_for_errors(
+            validation_result=validation_result,
+            fix_instructions=fix_instructions,
+            dependencies=transformer_deps,
+            adapter=self.adapter,
+        )
+
+        logger.info(f"Generated {len(fixes)} fixes")
+
+        # Apply fixes to repository
+        repo_path = Path(self.deps.repository_path)
+        backup_dir = Path(self.state.backup_directory) if self.state.backup_directory else None
+
+        for fix in fixes:
+            logger.info(f"Applying fix to {fix.file_path}")
+            await apply_code_change(fix, repo_path, backup_dir)
+
+            # Send progress update
+            self._send_progress(
+                f"✓ Applied fix: {fix.file_path} (+{fix.lines_added}/-{fix.lines_removed})",
+                event_type="file_modified",
+                file_path=fix.file_path,
+            )
+
+            # Update code_changes state with the fix
+            if self.state.code_changes:
+                # Replace or add the fixed file in code_changes
+                existing_idx = next(
+                    (
+                        i
+                        for i, c in enumerate(self.state.code_changes.changes)
+                        if c.file_path == fix.file_path
+                    ),
+                    None,
+                )
+                if existing_idx is not None:
+                    self.state.code_changes.changes[existing_idx] = fix
+                else:
+                    self.state.code_changes.changes.append(fix)
+
+        logger.info(f"Applied {len(fixes)} fixes to repository")
 
     def _build_error_summary(self, validation_result: ValidationResult) -> str:
         """Build human-readable error summary from validation result."""

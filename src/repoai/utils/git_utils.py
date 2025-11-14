@@ -12,7 +12,6 @@ Provides functions for:
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 from repoai.utils.logger import get_logger
@@ -39,7 +38,7 @@ def clone_repository(
         repo_url: Repository URL (https://github.com/user/repo)
         access_token: GitHub personal access token
         branch: Branch to checkout (default: main)
-        target_dir: Target directory (creates temp if None)
+        target_dir: Target directory (creates in cloned_repos/ if None)
 
     Returns:
         Path to cloned repository
@@ -55,9 +54,19 @@ def clone_repository(
         )
     """
     try:
-        # Create temp directory if not specified
+        # Create directory in RepoAI_AI/cloned_repos if not specified
         if target_dir is None:
-            target_dir = tempfile.mkdtemp(prefix="repoai_")
+            # Get RepoAI_AI root directory (3 levels up from this file)
+            repo_ai_root = Path(__file__).parent.parent.parent.parent
+            cloned_repos_dir = repo_ai_root / "cloned_repos"
+            cloned_repos_dir.mkdir(parents=True, exist_ok=True)
+
+            # Extract repo name from URL for directory name
+            repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+            import time
+
+            timestamp = int(time.time())
+            target_dir = str(cloned_repos_dir / f"{repo_name}_{timestamp}")
 
         target_path = Path(target_dir)
         target_path.mkdir(parents=True, exist_ok=True)

@@ -216,6 +216,9 @@ class PipelineState:
     fix_instructions: str | None = None
     """Instructions for fixing validation errors (used during retry)"""
 
+    backup_directory: str | None = None
+    """Path to backup directory created before first transformation (reused on retry)"""
+
     @property
     def elapsed_time_ms(self) -> float:
         """Calculate elapsed time in milliseconds."""

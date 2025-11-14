@@ -980,8 +980,42 @@ async def transform_with_streaming(
 
                             # Calculate metrics for this change
                             lines_added, lines_removed = _calculate_diff_stats(change.diff)
+
+                            # Fallback: if diff is empty but we have content, calculate from content
+                            if lines_added == 0 and lines_removed == 0:
+                                if change.modified_content and change.original_content:
+                                    # Modified file: count actual line differences
+                                    lines_added = len(
+                                        [
+                                            line
+                                            for line in change.modified_content.splitlines()
+                                            if line.strip()
+                                        ]
+                                    )
+                                    lines_removed = len(
+                                        [
+                                            line
+                                            for line in change.original_content.splitlines()
+                                            if line.strip()
+                                        ]
+                                    )
+                                elif change.modified_content and not change.original_content:
+                                    # New file: count all lines as added
+                                    lines_added = len(
+                                        [
+                                            line
+                                            for line in change.modified_content.splitlines()
+                                            if line.strip()
+                                        ]
+                                    )
+                                    lines_removed = 0
+
                             total_lines_added += lines_added
                             total_lines_removed += lines_removed
+
+                            # Update the CodeChange object with calculated stats
+                            change.lines_added = lines_added
+                            change.lines_removed = lines_removed
 
                             # Update metadata with current progress
                             current_time = time.time()

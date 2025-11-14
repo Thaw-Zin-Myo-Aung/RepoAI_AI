@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# RepoAI specific
+cloned_repos/
+
 # Distribution / packaging
 .Python
 build/
