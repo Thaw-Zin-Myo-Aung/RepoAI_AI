@@ -105,11 +105,6 @@ RepoAI_AI/
 │   ├── livetest_java_parser.py  # Parser testing
 │   └── test_java_parser.py      # Parser unit tests
 │
-├── 📓 notebooks/                  # Jupyter Notebooks
-│   ├── 00_quickstart.ipynb       # Quick start exploration
-│   ├── intake_agent.ipynb        # Intake agent exploration
-│   └── test_pydantic_ai_adapter.ipynb # Adapter testing
-│
 └── 🔨 scripts/                    # Utility Scripts
     ├── start_server.sh           # Start FastAPI server
     ├── run_api_tests.sh          # Run API tests

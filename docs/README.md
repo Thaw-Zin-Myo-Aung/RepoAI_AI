@@ -2,11 +2,6 @@
 
 RepoAI documentation and guides.
 
-## Available Documentation
-
-### Testing
-- **[testing.md](testing.md)** - API testing results and findings
-
 ## Quick Links
 
 - API Documentation – Run the server and visit `/docs` in your browser to see the interactive API docs.
