@@ -1,4 +1,12 @@
 {
     "python.REPL.enableREPLSmartSend": false,
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/src"
+    ],
+    "python.analysis.autoSearchPaths": true,
+    "python.envFile": "${workspaceFolder}/.env",
+    "python.languageServer": "Pylance"
 }

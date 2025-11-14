@@ -3,6 +3,8 @@
 This is the intelligent core of RepoAI.  
 It receives user prompts and repository access data from the backend API, orchestrates specialized AI agents powered by multiple AIML models, and returns validated, refactored code with supporting evidence.
 
+> **📁 Workspace Structure**: See [WORKSPACE_STRUCTURE.md](./WORKSPACE_STRUCTURE.md) for complete directory layout and code organization.
+
 ---
 
 ## 🚀 How It Works
