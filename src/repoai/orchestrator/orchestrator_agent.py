@@ -248,15 +248,40 @@ class OrchestratorAgent:
                 f"✅ Code generated: {self.state.code_changes.files_modified if self.state.code_changes else 0} files modified"
             )
 
+            # Stage 3.5: Validation Confirmation (interactive-detailed mode only)
+            validation_mode = "full"  # default: full validation with tests
+            if self._is_interactive_detailed():
+                validation_mode = await self._wait_for_validation_confirmation()
+
             # Stage 4: Validation (with intelligent retry)
-            self._send_progress("🔍 Stage 4: Validating code changes...")
-            await self._run_validation_stage()
-            validation_status = (
-                "passed"
-                if self.state.validation_result and self.state.validation_result.passed
-                else "completed"
-            )
-            self._send_progress(f"✅ Validation {validation_status}")
+            if validation_mode != "skip":
+                self._send_progress("🔍 Stage 4: Validating code changes...")
+                await self._run_validation_stage(skip_tests=(validation_mode == "compile_only"))
+                validation_status = (
+                    "passed"
+                    if self.state.validation_result and self.state.validation_result.passed
+                    else "completed"
+                )
+                self._send_progress(f"✅ Validation {validation_status}")
+            else:
+                self._send_progress("⏭️  Validation skipped by user")
+                # Create a basic validation result for skipped validation
+                from repoai.explainability.confidence import ConfidenceMetrics
+                from repoai.models import ValidationResult
+
+                self.state.validation_result = ValidationResult(
+                    plan_id=self.state.plan.plan_id if self.state.plan else "unknown",
+                    passed=True,
+                    compilation_passed=True,
+                    test_coverage=0.0,
+                    confidence=ConfidenceMetrics(
+                        overall_confidence=1.0,
+                        reasoning_quality=1.0,
+                        code_safety=0.5,  # Lower since we skipped validation
+                        test_coverage=0.0,
+                    ),
+                    recommendations=["Validation was skipped by user request"],
+                )
 
             # Stage 5: PR Narration
             self._send_progress("📝 Stage 5: Creating PR description...")
@@ -861,7 +886,29 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
             )
 
         except Exception as e:
-            logger.error(f"Transformation streaming failed: {e}")
+            error_msg = str(e)
+
+            # Check if it's a token limit error
+            is_token_error = any(
+                pattern in error_msg
+                for pattern in [
+                    "token limit",
+                    "Token limit",
+                    "MALFORMED_FUNCTION_CALL",
+                    "context too large",
+                ]
+            )
+
+            if is_token_error:
+                # Log concisely for token errors
+                logger.error(
+                    "Transformation failed: Token limit exceeded. "
+                    "The prompt was too large for the model to process."
+                )
+            else:
+                # Log full error for other issues
+                logger.error(f"Transformation streaming failed: {e}")
+
             # Restore from backup on failure
             from repoai.utils.file_operations import restore_from_backup
 
@@ -869,8 +916,12 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
             await restore_from_backup(backup_dir, repo_path)
             raise
 
-    async def _run_validation_stage(self) -> None:
-        """Run Validator Agent with intelligent retry on failures and real-time build output streaming."""
+    async def _run_validation_stage(self, skip_tests: bool = False) -> None:
+        """Run Validator Agent with intelligent retry on failures and real-time build output streaming.
+
+        Args:
+            skip_tests: If True, only compile without running tests. If False, run full validation.
+        """
         from repoai.agents.validator_agent import run_validator_agent
         from repoai.dependencies import ValidatorDependencies
 
@@ -880,7 +931,10 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
         self.state.stage = PipelineStage.VALIDATION
         stage_start = time.time()
 
-        logger.info("Running Validator Agent...")
+        if skip_tests:
+            logger.info("Running Validator Agent (compile-only mode)...")
+        else:
+            logger.info("Running Validator Agent (full validation with tests)...")
 
         # Create progress callback for build/test output streaming
         async def on_build_output(line: str) -> None:
@@ -902,6 +956,7 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
                 repository_path=self.deps.repository_path,
                 min_test_coverage=self.deps.min_test_coverage,
                 strict_mode=self.deps.require_all_checks_pass,
+                run_tests=not skip_tests,  # Invert: run_tests=False when skip_tests=True
                 progress_callback=on_build_output,  # Enable real-time streaming
             )
 
@@ -1504,6 +1559,110 @@ Focus on the ROOT CAUSE, not symptoms. If tests are broken, the root cause is us
             logger.error("Plan confirmation timeout (1 hour)")
             self.state.status = PipelineStatus.FAILED
             raise RuntimeError("Plan confirmation timeout - no response from user") from None
+
+    async def _wait_for_validation_confirmation(self) -> str:
+        """
+        Wait for user to choose validation mode.
+
+        Returns:
+            str: Validation mode - \"full\" (compile + tests), \"compile_only\", or \"skip\"
+
+        Raises:
+            RuntimeError: If confirmation queue is not available
+        """
+        if not self.confirmation_queue:
+            logger.warning("No confirmation queue available, defaulting to full validation")
+            return "full"
+
+        logger.info("Waiting for validation mode confirmation...")
+
+        # Update pipeline state
+        self.state.stage = PipelineStage.AWAITING_VALIDATION_CONFIRMATION
+        self.state.status = PipelineStatus.PAUSED
+        self.state.awaiting_confirmation = "validation"
+
+        # Build validation summary
+        validation_summary = f"""# Validation Options
+
+**Files to Validate:** {self.state.code_changes.files_modified if self.state.code_changes else 0} files changed
+**Changes:** +{self.state.code_changes.lines_added if self.state.code_changes else 0}/-{self.state.code_changes.lines_removed if self.state.code_changes else 0} lines
+
+Choose validation level:
+1. **Full Validation** - Compile code + run all tests (recommended)
+2. **Compile Only** - Only check if code compiles, skip tests (faster)
+3. **Skip** - Skip validation entirely (not recommended)
+"""
+
+        self.state.confirmation_data = {"validation_summary": validation_summary}
+
+        # Send progress update
+        self._send_progress(
+            "⏸️  Choose validation mode - awaiting your confirmation",
+            event_type="validation_ready",
+            requires_confirmation=True,
+            confirmation_type="validation",
+            additional_data={
+                "validation_summary": validation_summary,
+                "files_changed": (
+                    self.state.code_changes.files_modified if self.state.code_changes else 0
+                ),
+                "lines_added": (
+                    self.state.code_changes.lines_added if self.state.code_changes else 0
+                ),
+                "lines_removed": (
+                    self.state.code_changes.lines_removed if self.state.code_changes else 0
+                ),
+            },
+        )
+
+        try:
+            # Wait for confirmation response (with timeout)
+            logger.info("Waiting for user confirmation on validation mode...")
+            confirmation = await asyncio.wait_for(self.confirmation_queue.get(), timeout=3600.0)
+
+            # Check if this is a natural language response
+            if "user_response" in confirmation:
+                logger.info("Received natural language response, using LLM to interpret...")
+                user_response = str(confirmation["user_response"])
+
+                # Use LLM to interpret validation mode intent
+                decision = await self._interpret_validation_intent(
+                    user_response, validation_summary
+                )
+
+                # Extract mode from modifications or reasoning
+                mode = "full"  # default
+                if decision.modifications:
+                    mods_lower = decision.modifications.lower()
+                    if "skip" in mods_lower:
+                        mode = "skip"
+                    elif "compile" in mods_lower and "only" in mods_lower:
+                        mode = "compile_only"
+                    elif "full" in mods_lower or "test" in mods_lower:
+                        mode = "full"
+
+                logger.info(
+                    f"LLM interpreted validation mode: {mode}, "
+                    f"confidence={decision.confidence:.2f}"
+                )
+
+                self.state.awaiting_confirmation = None
+                self.state.status = PipelineStatus.RUNNING
+                return mode
+            else:
+                # Structured format
+                mode_obj = confirmation.get("validation_mode", "full")
+                mode = str(mode_obj)
+
+                logger.info(f"Received structured validation mode: {mode}")
+
+                self.state.awaiting_confirmation = None
+                self.state.status = PipelineStatus.RUNNING
+                return mode
+
+        except asyncio.TimeoutError:
+            logger.error("Validation confirmation timeout (1 hour), defaulting to full validation")
+            return "full"
 
     async def _wait_for_push_confirmation(self) -> None:
         """
@@ -2162,6 +2321,89 @@ Analyze the user's response and determine if they approve or cancel the push."""
                 confidence=0.0,
                 modifications=None,
                 next_step="ask_user_to_rephrase",
+                estimated_success_probability=None,
+            )
+
+    async def _interpret_validation_intent(
+        self, user_response: str, validation_summary: str
+    ) -> OrchestratorDecision:
+        """
+        Use LLM to interpret natural language response for validation mode selection.
+
+        Args:
+            user_response: User's natural language response
+            validation_summary: Context about validation options
+
+        Returns:
+            OrchestratorDecision with modifications containing the validation mode
+        """
+        logger.info(f"Interpreting validation intent: '{user_response[:50]}...'")
+
+        validation_intent_instructions = """
+You are analyzing a user's response to choose a validation mode.
+
+**Validation Modes:**
+1. **full** - Run compilation + all tests (recommended, most thorough)
+2. **compile_only** - Only compile, skip tests (faster but less thorough)
+3. **skip** - Skip validation entirely (fastest but risky)
+
+**Your Task:**
+Determine which validation mode the user wants and set it in the modifications field.
+
+**Rules:**
+- Common "full" phrases: yes, run tests, full validation, test everything, validate thoroughly
+- Common "compile_only" phrases: just compile, compile only, skip tests, no tests
+- Common "skip" phrases: skip, skip validation, don't validate, no validation
+- Set modifications to: "full", "compile_only", or "skip"
+- Default to "full" if unclear
+- Set action to "approve" always (we just need the mode)
+
+**Examples:**
+- "yes, run full validation" → action=approve, modifications="full"
+- "just compile, skip tests" → action=approve, modifications="compile_only"
+- "skip validation" → action=approve, modifications="skip"
+- "run all tests" → action=approve, modifications="full"
+- "compile only please" → action=approve, modifications="compile_only"
+
+Output your decision as a valid OrchestratorDecision JSON object.
+"""
+
+        prompt = f"""**Validation Summary:**
+{validation_summary}
+
+**User Response:**
+"{user_response}"
+
+{validation_intent_instructions}
+
+Analyze the user's response and determine which validation mode they want."""
+
+        try:
+            result = await self.adapter.run_json_async(
+                role=ModelRole.ORCHESTRATOR,
+                schema=OrchestratorDecision,
+                messages=[{"content": f"{ORCHESTRATOR_SYSTEM_PROMPT}\n\n{prompt}"}],
+                temperature=0.2,
+                max_output_tokens=256,
+                use_fallback=True,
+            )
+
+            logger.info(
+                f"Validation intent interpreted: modifications={result.modifications}, "
+                f"confidence={result.confidence:.2f}"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to interpret validation intent: {e}", exc_info=True)
+            # Fallback: return full validation
+            return OrchestratorDecision(
+                action="approve",
+                reasoning="Failed to parse, defaulting to full validation",
+                confidence=0.5,
+                modifications="full",
+                next_step=None,
                 estimated_success_probability=None,
             )
 

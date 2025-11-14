@@ -24,6 +24,7 @@ class PipelineStage(str, Enum):
     PLANNING = "planning"
     AWAITING_PLAN_CONFIRMATION = "awaiting_plan_confirmation"
     TRANSFORMATION = "transformation"
+    AWAITING_VALIDATION_CONFIRMATION = "awaiting_validation_confirmation"
     VALIDATION = "validation"
     NARRATION = "narration"
     AWAITING_PUSH_CONFIRMATION = "awaiting_push_confirmation"
@@ -248,6 +249,7 @@ class PipelineState:
             PipelineStage.PLANNING: 0.30,
             PipelineStage.AWAITING_PLAN_CONFIRMATION: 0.35,
             PipelineStage.TRANSFORMATION: 0.55,
+            PipelineStage.AWAITING_VALIDATION_CONFIRMATION: 0.65,
             PipelineStage.VALIDATION: 0.75,
             PipelineStage.NARRATION: 0.85,
             PipelineStage.AWAITING_PUSH_CONFIRMATION: 0.90,

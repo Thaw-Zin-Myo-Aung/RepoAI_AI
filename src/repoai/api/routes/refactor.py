@@ -6,6 +6,7 @@ Endpoints:
 - GET  /api/refactor/{id}                 - Get job status
 - GET  /api/refactor/{id}/sse             - Server-Sent Events stream
 - POST /api/refactor/{id}/confirm-plan    - Confirm refactoring plan (interactive-detailed)
+- POST /api/refactor/{id}/confirm-validation - Confirm validation level (interactive-detailed)
 - POST /api/refactor/{id}/confirm-push    - Confirm git push (interactive-detailed)
 """
 
@@ -29,6 +30,7 @@ from ..models import (
     PushConfirmationRequest,
     RefactorRequest,
     RefactorResponse,
+    ValidationConfirmationRequest,
 )
 
 logger = get_logger(__name__)
@@ -321,6 +323,103 @@ async def confirm_plan(session_id: str, request: PlanConfirmationRequest) -> dic
         "status": "confirmed",
         "message": response_message,
     }
+
+
+@router.post("/refactor/{session_id}/confirm-validation")
+async def confirm_validation(
+    session_id: str, request: ValidationConfirmationRequest
+) -> dict[str, str]:
+    """
+    Confirm validation level for code changes.
+
+    Used in interactive-detailed mode when pipeline is waiting for validation approval.
+
+    Supports two input formats:
+    1. Structured: {"validation_mode": "full"} or {"validation_mode": "compile_only"} or {"validation_mode": "skip"}
+    2. Natural language: {"user_response": "run all tests"}
+
+    Validation modes:
+    - "full": Compile code and run all tests (default, recommended)
+    - "compile_only": Only compile code, skip test execution
+    - "skip": Skip validation entirely (risky, not recommended)
+
+    Example structured request:
+        POST /api/refactor/session_123/confirm-validation
+        {"validation_mode": "full"}
+
+    Example natural language request:
+        POST /api/refactor/session_123/confirm-validation
+        {"user_response": "just compile, skip the test suite"}
+
+    Example response:
+        {
+            "status": "confirmed",
+            "message": "Validation mode set to: full"
+        }
+    """
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    state = active_sessions[session_id]
+
+    # Verify pipeline is waiting for validation confirmation
+    if state.awaiting_confirmation != "validation":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Session not awaiting validation confirmation (current: {state.awaiting_confirmation})",
+        )
+
+    # Validate input - must have either validation_mode or user_response, not both
+    if request.validation_mode and request.user_response:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either 'validation_mode' (structured) or 'user_response' (natural language), not both",
+        )
+
+    if not request.validation_mode and not request.user_response:
+        raise HTTPException(
+            status_code=400, detail="Must provide either 'validation_mode' or 'user_response'"
+        )
+
+    logger.info(
+        f"Validation confirmation received: session={session_id}, "
+        f"validation_mode={request.validation_mode or 'natural_language'}, "
+        f"user_response={request.user_response[:50] if request.user_response else None}"
+    )
+
+    # Put confirmation in queue (orchestrator is waiting for this)
+    if session_id in confirmation_queues:
+        if request.user_response:
+            # Natural language format - orchestrator will use LLM to interpret
+            await confirmation_queues[session_id].put({"user_response": request.user_response})
+        else:
+            # Structured format - direct validation mode
+            await confirmation_queues[session_id].put(
+                {
+                    "validation_mode": request.validation_mode,
+                }
+            )
+
+    if request.user_response:
+        return {
+            "status": "confirmed",
+            "message": "Processing natural language response...",
+        }
+    elif request.validation_mode == "full":
+        return {
+            "status": "confirmed",
+            "message": "Validation mode set to: full (compile + run tests)",
+        }
+    elif request.validation_mode == "compile_only":
+        return {
+            "status": "confirmed",
+            "message": "Validation mode set to: compile_only (skip tests)",
+        }
+    else:  # skip
+        return {
+            "status": "confirmed",
+            "message": "Validation mode set to: skip (no validation - risky!)",
+        }
 
 
 @router.post("/refactor/{session_id}/confirm-push")

@@ -975,33 +975,33 @@ async def transform_with_streaming(
                             files_seen.add(change.file_path)
                             file_count += 1
 
-                        # Track this file for step summary
-                        step_files.append(change)
+                            # Track this file for step summary (only once per unique file)
+                            step_files.append(change)
 
-                        # Calculate metrics for this change
-                        lines_added, lines_removed = _calculate_diff_stats(change.diff)
-                        total_lines_added += lines_added
-                        total_lines_removed += lines_removed
+                            # Calculate metrics for this change
+                            lines_added, lines_removed = _calculate_diff_stats(change.diff)
+                            total_lines_added += lines_added
+                            total_lines_removed += lines_removed
 
-                        # Update metadata with current progress
-                        current_time = time.time()
-                        metadata.execution_time_ms = (current_time - start_time) * 1000
-                        metadata.model_used = "gemini-2.5-flash"  # TODO: Get from adapter
-                        metadata.data_sources = [
-                            f"step:{step_idx}/{len(plan.steps)}",
-                            f"file:{change.file_path}",
-                            f"files_total:{file_count}",
-                            f"lines_added:{total_lines_added}",
-                            f"lines_removed:{total_lines_removed}",
-                        ]
+                            # Update metadata with current progress
+                            current_time = time.time()
+                            metadata.execution_time_ms = (current_time - start_time) * 1000
+                            metadata.model_used = "gemini-2.5-flash"  # TODO: Get from adapter
+                            metadata.data_sources = [
+                                f"step:{step_idx}/{len(plan.steps)}",
+                                f"file:{change.file_path}",
+                                f"files_total:{file_count}",
+                                f"lines_added:{total_lines_added}",
+                                f"lines_removed:{total_lines_removed}",
+                            ]
 
-                        logger.debug(
-                            f"Yielding file {file_count}: {change.file_path} "
-                            f"(+{lines_added}/-{lines_removed} lines)"
-                        )
+                            logger.debug(
+                                f"Yielding file {file_count}: {change.file_path} "
+                                f"(+{lines_added}/-{lines_removed} lines)"
+                            )
 
-                        # Yield immediately for real-time processing
-                        yield change, metadata
+                            # Yield immediately for real-time processing (only new files)
+                            yield change, metadata
 
             # Send step completion message with file contents summary
             if progress_callback and step_files:
@@ -1020,7 +1020,6 @@ async def transform_with_streaming(
 
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"Error streaming step {step_idx}: {error_msg}")
 
             # Check if it's a context/token related error
             is_context_error = any(
@@ -1030,34 +1029,48 @@ async def transform_with_streaming(
                     "MAX_TOKENS",
                     "token limit",
                     "context length",
+                    "UnexpectedModelBehavior",
                 ]
             )
 
             if is_context_error:
+                # Log concisely without dumping the entire error object
                 logger.warning(
-                    f"Step {step_idx} hit context limit (MALFORMED_FUNCTION_CALL or token error), "
-                    "retrying with reduced context..."
+                    f"Step {step_idx} hit token/context limit (MALFORMED_FUNCTION_CALL). "
+                    f"Prompt tokens: Check logs for details."
                 )
                 if progress_callback:
                     progress_callback(
                         f"⚠️  Step {step_idx} context too large, simplifying and retrying..."
                     )
 
-                # TODO: Implement context reduction and retry
-                # For now, provide helpful error message
+                # Provide clean error message for users
                 error_msg = (
-                    f"Context too large for step {step_idx}. "
-                    "The model cannot reliably call tools with this much context. "
+                    f"Token limit exceeded for step {step_idx}. "
+                    "The prompt is too large for the model to process. "
                     "Try breaking this step into smaller sub-steps."
                 )
 
-            # Send error message
-            if progress_callback:
-                progress_callback(f"❌ Step {step_idx} failed: {error_msg}")
+                # Send error message
+                if progress_callback:
+                    progress_callback(f"❌ Step {step_idx} failed: {error_msg}")
 
-            # Update metadata with error
-            metadata.risk_factors.append(f"error:{error_msg}")
-            raise
+                # Update metadata with clean error
+                metadata.risk_factors.append(f"error:token_limit_step_{step_idx}")
+
+                # Raise a cleaner exception
+                raise RuntimeError(error_msg) from None
+            else:
+                # For non-context errors, log the actual error
+                logger.error(f"Error streaming step {step_idx}: {error_msg}")
+
+                # Send error message
+                if progress_callback:
+                    progress_callback(f"❌ Step {step_idx} failed: {error_msg}")
+
+                # Update metadata with error
+                metadata.risk_factors.append(f"error:{error_msg[:200]}")
+                raise
 
     # Final metadata update
     end_time = time.time()

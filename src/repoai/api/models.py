@@ -425,6 +425,74 @@ class PlanConfirmationRequest(BaseModel):
     )
 
 
+class ValidationConfirmationRequest(BaseModel):
+    """
+    User's decision on validation level for code changes.
+
+    Used in interactive-detailed mode before validation stage.
+
+    Supports two input formats:
+    1. Structured format (programmatic):
+       {"validation_mode": "full"} or {"validation_mode": "compile_only"} or {"validation_mode": "skip"}
+
+    2. Natural language format (interactive chat):
+       {"user_response": "run full tests"} or
+       {"user_response": "just compile, skip tests"}
+
+    Validation modes:
+    - "full": Compile code and run all tests (default, recommended)
+    - "compile_only": Only compile code, skip test execution
+    - "skip": Skip validation entirely (risky, not recommended)
+
+    The orchestrator will use LLM to interpret natural language responses.
+    """
+
+    action: str | None = Field(
+        default=None,
+        description="Deprecated: use validation_mode instead. For backwards compatibility.",
+    )
+    validation_mode: str | None = Field(
+        default=None,
+        description="Validation level: 'full', 'compile_only', or 'skip' (use this OR user_response, not both)",
+        pattern="^(full|compile_only|skip)$",
+    )
+    user_response: str | None = Field(
+        default=None,
+        description="Natural language response from user (use this OR validation_mode, not both). LLM will interpret intent.",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "Full validation (compile + tests)",
+                    "value": {"validation_mode": "full"},
+                },
+                {
+                    "description": "Compile only, skip tests",
+                    "value": {"validation_mode": "compile_only"},
+                },
+                {
+                    "description": "Skip validation (risky)",
+                    "value": {"validation_mode": "skip"},
+                },
+                {
+                    "description": "Natural language - full validation",
+                    "value": {"user_response": "yes, run all tests"},
+                },
+                {
+                    "description": "Natural language - compile only",
+                    "value": {"user_response": "just compile, skip the test suite"},
+                },
+                {
+                    "description": "Natural language - skip validation",
+                    "value": {"user_response": "skip validation, I trust the changes"},
+                },
+            ]
+        }
+    )
+
+
 class PushConfirmationRequest(BaseModel):
     """
     User's decision on pushing changes to GitHub.
