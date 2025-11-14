@@ -1663,40 +1663,58 @@ Focus on the ROOT CAUSE, not symptoms. If tests are broken, the root cause is us
 
                 # Extract overrides from modifications if provided
                 if decision.modifications:
-                    # LLM might suggest branch or message in modifications
-                    # Parse natural language for commit message override
-                    mods = decision.modifications.lower()
+                    # LLM provides modifications in structured format:
+                    # "branch: feature/my-branch\ncommit_message: My message"
+                    mods = decision.modifications
+                    mods_lower = mods.lower()
 
-                    # Check for commit message intent
-                    # e.g., "use commit message: fix caching bug"
-                    # e.g., "change message to: improve performance"
-                    if any(
-                        phrase in mods for phrase in ["commit message:", "message:", "use message"]
+                    # Extract branch name - check for "branch:" prefix (new format)
+                    # e.g., "branch: feature/caching"
+                    if "branch:" in mods_lower:
+                        branch_start = mods_lower.index("branch:") + len("branch:")
+                        # Extract up to newline or end
+                        branch_line = mods[branch_start:].split("\n")[0].strip()
+                        branch_override = branch_line.strip('"').strip("'")
+                        logger.info(f"Extracted branch name from LLM: {branch_override}")
+                    # Fallback to old format: "branch name:", "use branch"
+                    elif any(phrase in mods_lower for phrase in ["branch name:", "use branch"]):
+                        for phrase in ["branch name:", "use branch"]:
+                            if phrase in mods_lower:
+                                branch_start = mods_lower.index(phrase) + len(phrase)
+                                branch_candidate = mods[branch_start:].strip()
+                                # Take up to newline, space, or end
+                                branch_override = branch_candidate.split()[0].strip('"').strip("'")
+                                logger.info(
+                                    f"Extracted branch name from LLM (legacy): {branch_override}"
+                                )
+                                break
+
+                    # Extract commit message - check for "commit_message:" prefix (new format)
+                    # e.g., "commit_message: fix caching bug"
+                    if "commit_message:" in mods_lower:
+                        msg_start = mods_lower.index("commit_message:") + len("commit_message:")
+                        # Extract up to newline or end
+                        msg_line = mods[msg_start:].split("\n")[0].strip()
+                        message_override = msg_line.strip('"').strip("'")
+                        logger.info(
+                            f"Extracted commit message from LLM: {message_override[:50]}..."
+                        )
+                    # Fallback to old format: "commit message:", "message:", "use message"
+                    elif any(
+                        phrase in mods_lower
+                        for phrase in ["commit message:", "message:", "use message"]
                     ):
-                        # Extract the message (simple heuristic - could be enhanced)
                         for phrase in ["commit message:", "message:", "use message"]:
-                            if phrase in mods:
-                                msg_start = mods.index(phrase) + len(phrase)
-                                msg_candidate = decision.modifications[msg_start:].strip()
+                            if phrase in mods_lower:
+                                msg_start = mods_lower.index(phrase) + len(phrase)
+                                msg_candidate = mods[msg_start:].strip()
                                 # Take until newline or end
                                 message_override = (
                                     msg_candidate.split("\n")[0].strip('"').strip("'")
                                 )
                                 logger.info(
-                                    f"Extracted commit message from LLM: {message_override[:50]}..."
+                                    f"Extracted commit message from LLM (legacy): {message_override[:50]}..."
                                 )
-                                break
-
-                    # Check for branch name intent
-                    # e.g., "use branch feature/caching"
-                    if any(phrase in mods for phrase in ["branch name:", "branch:", "use branch"]):
-                        for phrase in ["branch name:", "branch:", "use branch"]:
-                            if phrase in mods:
-                                branch_start = mods.index(phrase) + len(phrase)
-                                branch_candidate = decision.modifications[branch_start:].strip()
-                                # Take first word as branch name
-                                branch_override = branch_candidate.split()[0].strip('"').strip("'")
-                                logger.info(f"Extracted branch name from LLM: {branch_override}")
                                 break
 
                 logger.info(
@@ -2074,14 +2092,24 @@ Determine if the user wants to:
 - Common cancel phrases: no, cancel, abort, don't push, stop, wait
 - Be lenient with informal language
 - If user wants to modify commit message or branch name, still set action to "approve"
-- In modifications field, include any requested changes:
-  * "commit message: <new message>" if they want different commit message
-  * "branch name: <branch>" if they want different branch name
+- In modifications field, include any requested changes on separate lines:
+  * "branch: <branch-name>" if they want different branch name
+  * "commit_message: <new message>" if they want different commit message
+
+**Branch Name Extraction:**
+Extract branch names from phrases like:
+- "push to <branch>" → "branch: <branch>"
+- "use branch <branch>" → "branch: <branch>"
+- "create branch <branch>" → "branch: <branch>"
+- "push it to <branch>" → "branch: <branch>"
+Common branch patterns: feature/*, bugfix/*, hotfix/*, release/*, or simple names
 
 **Examples:**
-- "yes but use commit message: Fix critical bug" → action=approve, modifications="commit message: Fix critical bug"
-- "push to feature/caching branch" → action=approve, modifications="branch name: feature/caching"
-- "yes, use message: Improve performance" → action=approve, modifications="commit message: Improve performance"
+- "yes but use commit message: Fix critical bug" → action=approve, modifications="commit_message: Fix critical bug"
+- "push to feature/caching branch" → action=approve, modifications="branch: feature/caching"
+- "yes, push it to bugfix/login-issue" → action=approve, modifications="branch: bugfix/login-issue"
+- "use message: Improve performance" → action=approve, modifications="commit_message: Improve performance"
+- "yes, push to my-feature" → action=approve, modifications="branch: my-feature"
 
 Output your decision as a valid OrchestratorDecision JSON object.
 """
