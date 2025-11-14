@@ -343,35 +343,6 @@ curl -X POST http://localhost:8000/api/v1/refactor \
 ✅ **Capability question** → Detailed capabilities, no pipeline execution  
 ✅ **Refactoring request** → Full pipeline execution with all stages
 
-## Demo Script (Nov 17)
-
-Showcase the conversational capability:
-
-### Demo Flow
-
-1. **First interaction - Greeting:**
-   ```
-   User: "hi"
-   RepoAI: "👋 Hello! I'm RepoAI, your intelligent code refactoring assistant..."
-   ```
-
-2. **User asks about capabilities:**
-   ```
-   User: "what can you do?"
-   RepoAI: "🤖 I'm RepoAI, an AI-powered code refactoring assistant!
-   I can analyze, plan, generate, validate, create PRs, and push changes..."
-   ```
-
-3. **User makes refactoring request:**
-   ```
-   User: "Add JWT authentication to the user service"
-   RepoAI: "🚀 Starting pipeline: Add JWT authentication...
-   📥 Stage 1: Analyzing refactoring request..."
-   [Full pipeline executes]
-   ```
-
-This demonstrates that RepoAI is **smart enough to know when to chat vs when to work!** 🎯
-
 ## Conclusion
 
 The conversational intent detection feature makes RepoAI more **approachable and user-friendly**, especially for first-time users. It provides a natural onboarding experience while maintaining the robust refactoring pipeline for actual work requests.
@@ -380,5 +351,3 @@ The hybrid heuristic + LLM approach ensures:
 - ⚡ **Fast response** for common cases
 - 🎯 **Accurate classification** for ambiguous cases
 - 🛡️ **Safe defaults** that never block valid refactoring requests
-
-Perfect for the **Nov 17 demo** to show the AI's intelligence in understanding context! 🚀

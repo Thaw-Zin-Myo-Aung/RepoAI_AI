@@ -271,7 +271,7 @@ if (data.event_type === 'progress') {
 
 The conversational intent detection is **fully integrated** and works automatically through the existing pipeline infrastructure. No API changes, route modifications, or additional endpoints required!
 
-## Demo Flow (Nov 17)
+## Demo Flow
 
 ### Scenario 1: First-Time User
 
@@ -371,29 +371,4 @@ The integration is **seamless** and requires:
 - ✅ No database schema updates
 - ✅ No configuration files
 
-The feature works **automatically** through the existing `orchestrator.run()` flow and is **ready for the Nov 17 demo**! 🚀
-
-## Quick Start
-
-To use conversational features:
-
-```bash
-# Start the API server
-cd /home/timmy/RepoAI/RepoAI_AI
-uv run uvicorn repoai.api.main:app --reload
-
-# Test conversational endpoint
-curl -X POST http://localhost:8000/api/v1/refactor \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id": "demo_user",
-    "user_prompt": "hello",
-    "repository_url": "https://github.com/test/repo",
-    "mode": "interactive-detailed"
-  }'
-
-# Watch SSE stream
-curl -N http://localhost:8000/api/v1/refactor/{session_id}/sse
-```
-
-That's it! The conversational AI is live and ready! 🎉
+The feature works **automatically** through the existing `orchestrator.run()` flow!

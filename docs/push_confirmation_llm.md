@@ -286,41 +286,6 @@ curl -X POST http://localhost:8000/api/v1/refactor/session_123/confirm-push \
 | Confidence threshold | 0.5 | 0.7 (stricter) |
 | Regeneration support | ❌ No | ✅ Yes (PR narrator) |
 
-## Demo Script
-
-For the Nov 17 demo, showcase these scenarios:
-
-### Scenario 1: Simple Approval
-```
-User: "yes, push it"
-System: ✅ Push approved, creating branch repoai/session_abc...
-```
-
-### Scenario 2: Custom Commit Message
-```
-User: "yes but use message: Optimize cache performance"
-System: ✅ Using custom commit message: Optimize cache performance...
-```
-
-### Scenario 3: Regenerate Commit Message
-```
-User: "yes but regenerate the commit message"
-System: 🔄 Regenerating commit message with PR narrator agent...
-System: ✅ New commit message: Refactor authentication module to improve...
-```
-
-### Scenario 4: Custom Branch
-```
-User: "push to feature/performance-optimization"
-System: ✅ Using custom branch: feature/performance-optimization...
-```
-
-### Scenario 5: Cancellation
-```
-User: "cancel, I need to review more"
-System: ❌ Push cancelled by user
-```
-
 ## Conclusion
 
 The push confirmation system now provides a **consistent, natural language interface** for users to approve/cancel git operations. The LLM intelligently interprets user intent and can even **regenerate commit messages** using the PR narrator agent when requested.
