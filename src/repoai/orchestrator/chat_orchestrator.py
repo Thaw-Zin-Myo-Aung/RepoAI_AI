@@ -479,14 +479,14 @@ class ChatOrchestrator(OrchestratorAgent):
             },
         )
 
-    async def _run_validation_stage(self) -> None:
+    async def _run_validation_stage(self, skip_tests: bool = False) -> None:
         """Run Validator Agent with interactive retry decisions."""
         self.send_progress_update(
             PipelineStage.VALIDATION, "Validating code changes...", {"retry_count": 0}
         )
 
         # Call base implementation (handles validation logic)
-        await super()._run_validation_stage()
+        await super()._run_validation_stage(skip_tests=skip_tests)
 
         # Send validation results
         if self.state.validation_result:
