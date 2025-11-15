@@ -1,7 +1,7 @@
 substitutions:
   _REGION: "us-central1"
   _REPOSITORY: "repoai-ai"
-  _IMAGE: "repoai"
+  _IMAGE: "repoai-ai"
   _SERVICE: "repoai-service"
   _PROJECT_ID: "gen-lang-client-0265539996"
   _GEMINI_MODEL: "gemini-2.0-flash-exp"
