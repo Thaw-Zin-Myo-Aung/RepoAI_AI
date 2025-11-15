@@ -12,6 +12,7 @@ Endpoints:
 """
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -62,12 +63,23 @@ app = FastAPI(
 )
 
 # CORS middleware for Java backend
+# Configure allowed origins via `CORS_ALLOWED_ORIGINS` env var.
+# Frontend at http://localhost:5173 uses cookies, so default to that origin
+# and enable credentials. In production set CORS_ALLOWED_ORIGINS to a
+# comma-separated list of allowed origins (e.g. "https://app.example.com").
+origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+if origins_env:
+    allow_origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+    allow_credentials = True
+else:
+    # Default to local frontend which requires cookies
+    allow_origins = ["http://localhost:5173"]
+    allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "*",
-    ],
-    allow_credentials=True,
+    allow_origins=allow_origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
