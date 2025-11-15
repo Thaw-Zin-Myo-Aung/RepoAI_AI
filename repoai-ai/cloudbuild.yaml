@@ -36,6 +36,7 @@ steps:
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
+    secretEnv: ["GOOGLE_API_KEY"]
     args:
       - -c
       - |
