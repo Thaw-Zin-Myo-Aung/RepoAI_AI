@@ -8,6 +8,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+      - name: Create uv virtual environment
+        run: |
+          # Create uv's venv so subsequent `uv pip` commands succeed
+          uv venv
       - name: Install package and linters
         run: |
           # Install the package (editable) and common dev tools used by CI
