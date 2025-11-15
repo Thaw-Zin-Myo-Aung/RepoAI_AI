@@ -65,9 +65,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:8080",  # Java backend (dev)
-        "http://localhost:3000",  # Frontend (dev)
-        # Add production URLs here
+        # Allow all origins so this service can be called from anywhere
+        # (useful for backend-to-backend calls, testing, and external clients).
+        # Note: when `allow_credentials=True` browsers will block wildcard origins;
+        # keep `allow_credentials=False` for wildcard origin support.
+        "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],
