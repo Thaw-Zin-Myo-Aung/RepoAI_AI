@@ -284,6 +284,41 @@ class OrchestratorAgent:
                     recommendations=["Validation was skipped by user request"],
                 )
 
+            # If validation ran and failed after retries, abort before creating PR
+            if self.state.validation_result and not self.state.validation_result.passed:
+                # Validation failed and either auto-fix exhausted or was disabled.
+                self.state.stage = PipelineStage.FAILED
+                self.state.status = PipelineStatus.FAILED
+                self.state.add_error("Validation failed after retry attempts")
+                self.state.end_time = time.time()
+                # Stream final failure reasons to the user
+                try:
+                    error_summary = self._build_error_summary(self.state.validation_result)
+                    failed_checks = (
+                        self.state.validation_result.failed_checks
+                        if hasattr(self.state.validation_result, "failed_checks")
+                        else []
+                    )
+                    self._send_progress(
+                        "❌ Validation failed after retries — aborting pipeline",
+                        event_type="validation_failed",
+                        additional_data={
+                            "error_summary": error_summary,
+                            "failed_checks": failed_checks,
+                            "compilation_passed": getattr(
+                                self.state.validation_result, "compilation_passed", None
+                            ),
+                        },
+                    )
+                except Exception:
+                    # Fallback to simple message if building summary fails
+                    self._send_progress(
+                        "❌ Validation failed after retries — aborting pipeline",
+                        event_type="validation_failed",
+                    )
+                logger.warning("Stopping pipeline: validation did not pass after retries")
+                return self.state
+
             # Stage 5: PR Narration
             self._send_progress("📝 Stage 5: Creating PR description...")
             await self._run_narration_stage()
@@ -346,6 +381,25 @@ class OrchestratorAgent:
                 f"{self.state.elapsed_time_ms:.0f}ms, "
                 f"{self.state.code_changes.files_modified if self.state.code_changes else 0} files"
             )
+            # Pipeline finished — perform optional cleanup of cloned repo and backup
+            try:
+                from pathlib import Path
+
+                from repoai.utils.file_operations import cleanup_backup, cleanup_cloned_repo
+
+                # Cleanup backup directory if present
+                if hasattr(self.state, "backup_directory") and self.state.backup_directory:
+                    backup_dir = Path(self.state.backup_directory)
+                    logger.info(f"Cleaning up backup directory: {backup_dir}")
+                    await cleanup_backup(backup_dir)
+
+                # Cleanup cloned repository if it appears to be in 'cloned_repos'
+                if self.deps.repository_path:
+                    repo_dir = Path(self.deps.repository_path)
+                    logger.info(f"Attempting to cleanup cloned repository: {repo_dir}")
+                    await cleanup_cloned_repo(repo_dir)
+            except Exception as e:
+                logger.warning(f"Cleanup after completion failed: {e}")
 
         except Exception as e:
             self.state.stage = PipelineStage.FAILED
@@ -355,6 +409,25 @@ class OrchestratorAgent:
 
             self._send_progress(f"❌ Pipeline failed: {str(e)[:100]}")
             logger.error(f"Pipeline failed: {e}", exc_info=True)
+            # On failure attempt cleanup of backup and cloned repo (best-effort)
+            try:
+                from pathlib import Path
+
+                from repoai.utils.file_operations import cleanup_backup, cleanup_cloned_repo
+
+                if hasattr(self.state, "backup_directory") and self.state.backup_directory:
+                    backup_dir = Path(self.state.backup_directory)
+                    logger.info(f"Cleaning up backup directory after failure: {backup_dir}")
+                    await cleanup_backup(backup_dir)
+
+                if self.deps.repository_path:
+                    repo_dir = Path(self.deps.repository_path)
+                    logger.info(
+                        f"Attempting to cleanup cloned repository after failure: {repo_dir}"
+                    )
+                    await cleanup_cloned_repo(repo_dir)
+            except Exception as e2:
+                logger.warning(f"Cleanup after failure failed: {e2}")
 
         return self.state
 
@@ -691,11 +764,13 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
             repository_url=self.deps.repository_url,
             write_to_disk=True,
             output_path=self.deps.output_path,
+            batch_size=self.deps.transformer_batch_size,
+            max_tokens=self.deps.transformer_max_tokens,
         )
 
         # Run Transformer Agent
         code_changes, metadata = await run_transformer_agent(
-            self.state.plan, transformer_deps, self.adapter
+            self.state.plan, transformer_deps, self.adapter, batch_size=transformer_deps.batch_size
         )
 
         self.state.code_changes = code_changes
@@ -787,14 +862,14 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
                 event_type = "transformer_progress"  # Default
                 additional_data: dict[str, object] | None = None
 
-                # Step-level events
-                if "Processing step" in message or "⚙️" in message:
-                    event_type = "step_started"
-                    logger.info("[TRANSFORMER_CALLBACK] Detected step_started")
-                elif "completed" in message.lower() or "✅" in message:
-                    event_type = "step_completed"
-                    # For step completion, include summary data if available
-                    if "Files changed" in message:
+                # Batch-level events (new format from transformer)
+                if message.startswith("Proceeding Batch") or "Proceeding Batch" in message:
+                    event_type = "batch_started"
+                    logger.info("[TRANSFORMER_CALLBACK] Detected batch_started")
+                elif message.startswith("Batch") and "Completed" in message:
+                    event_type = "batch_completed"
+                    # For batch completion, include summary data if available
+                    if "Files changed" in message or "Files changed (" in message:
                         # Extract file summary from message
                         try:
                             lines = message.split("\n")
@@ -835,7 +910,11 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
 
             # Stream code changes and apply immediately
             async for code_change, _metadata in transform_with_streaming(
-                self.state.plan, transformer_deps, self.adapter, transformer_progress
+                self.state.plan,
+                transformer_deps,
+                self.adapter,
+                transformer_progress,
+                batch_size=transformer_deps.batch_size,
             ):
                 # Apply file immediately to repository
                 try:
@@ -975,6 +1054,7 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
                 min_test_coverage=self.deps.min_test_coverage,
                 strict_mode=self.deps.require_all_checks_pass,
                 run_tests=not skip_tests,  # Invert: run_tests=False when skip_tests=True
+                run_compile=skip_tests,  # If skip_tests True, we want compile-only
                 progress_callback=on_build_output,  # Enable real-time streaming
             )
 
@@ -1005,6 +1085,29 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
                 logger.warning(
                     f"Max retries ({self.state.max_retries}) reached, stopping validation"
                 )
+                try:
+                    # Stream detailed failure reasons to the user before stopping
+                    error_summary = self._build_error_summary(validation_result)
+                    failed_checks = (
+                        validation_result.failed_checks
+                        if hasattr(validation_result, "failed_checks")
+                        else []
+                    )
+                    self._send_progress(
+                        "❌ Validation failed: maximum retries reached",
+                        event_type="validation_failed",
+                        additional_data={
+                            "error_summary": error_summary,
+                            "failed_checks": failed_checks,
+                            "compilation_passed": getattr(
+                                validation_result, "compilation_passed", None
+                            ),
+                        },
+                    )
+                except Exception:
+                    logger.debug(
+                        "Failed sending detailed validation failure progress", exc_info=True
+                    )
                 break
 
             # Use LLM to decide retry strategy
@@ -2525,7 +2628,68 @@ Analyze the user's response and determine which validation mode they want."""
 Analyze the validation errors and decide the best retry strategy. Output a valid OrchestratorDecision."""
 
         try:
-            # Use ORCHESTRATOR role for meta-decisions
+            # Stream the orchestration reasoning so the UI can display LLM analysis in real-time.
+            # Use structured streaming to get partial OrchestratorDecision objects.
+            logger.info("Starting streamed retry-decision analysis (structured)...")
+            last_result: OrchestratorDecision | None = None
+
+            async for partial in self.adapter.stream_json_async(
+                role=ModelRole.ORCHESTRATOR,
+                schema=OrchestratorDecision,
+                messages=[{"content": f"{ORCHESTRATOR_SYSTEM_PROMPT}\n\n{prompt}"}],
+                temperature=0.2,
+                max_output_tokens=4096,
+                use_fallback=True,
+            ):
+                # `partial` may be a partial schema instance; capture as last_result
+                try:
+                    last_result = partial
+                except Exception:
+                    # In case partial isn't fully validated yet, skip assigning
+                    pass
+
+                # Stream the reasoning text to the frontend as it becomes available
+                reasoning_text = getattr(partial, "reasoning", None) if partial else None
+                if reasoning_text:
+                    try:
+                        # Send incremental reasoning updates via progress channel
+                        self._send_progress(
+                            message=reasoning_text,
+                            event_type="llm_reasoning",
+                            additional_data={
+                                "stage": "validation_analysis",
+                                "partial": True,
+                            },
+                        )
+                    except Exception:
+                        logger.debug(
+                            "Failed sending partial reasoning progress update", exc_info=True
+                        )
+
+            # If streaming provided at least one structured output, use it
+            if last_result:
+                result = last_result
+                logger.info(
+                    f"Retry decision (streamed): action={result.action}, "
+                    f"confidence={result.confidence:.2f}, "
+                    f"success_prob={result.estimated_success_probability or 0:.2f}"
+                )
+                if (
+                    result.estimated_success_probability
+                    and result.estimated_success_probability < 0.3
+                ):
+                    logger.warning(
+                        f"Low success probability ({result.estimated_success_probability:.2f}) "
+                        f"for {result.action} action"
+                    )
+                return result
+
+            # If streaming didn't produce a validated result, fall back to non-streaming call
+            logger.info(
+                "Stream did not yield a final validated decision; falling back to JSON completion"
+            )
+
+            # Use ORCHESTRATOR role for meta-decisions (fallback)
             result = await self.adapter.run_json_async(
                 role=ModelRole.ORCHESTRATOR,
                 schema=OrchestratorDecision,
@@ -2536,7 +2700,7 @@ Analyze the validation errors and decide the best retry strategy. Output a valid
             )
 
             logger.info(
-                f"Retry decision: action={result.action}, "
+                f"Retry decision (fallback): action={result.action}, "
                 f"confidence={result.confidence:.2f}, "
                 f"success_prob={result.estimated_success_probability or 0:.2f}"
             )

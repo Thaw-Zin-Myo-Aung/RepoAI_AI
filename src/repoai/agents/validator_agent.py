@@ -749,7 +749,62 @@ async def run_validator_agent(
     # Track timing
     start_time = time.time()
 
-    # Prepare validation prompt
+    # Run compilation and/or tests only when explicitly requested by the caller
+    # via `dependencies` flags. This avoids duplicated work (compile then
+    # `mvn test` which triggers compilation again) and gives the caller control
+    # over whether to perform expensive real validation steps.
+    compilation_summary = None
+    tests_summary = None
+
+    try:
+        # Detect build tool (only if repository_path is provided)
+        repo_path_str = getattr(dependencies, "repository_path", None)
+        if not repo_path_str:
+            logger.info(
+                "No repository_path provided in dependencies; skipping pre-validation build/tests"
+            )
+            build_info = None
+        else:
+            repo_path = Path(repo_path_str)
+            build_info = await detect_build_tool(repo_path)
+
+        # Helper to forward lines to dependencies.progress_callback
+        async def _forward(line: str) -> None:
+            if dependencies.progress_callback:
+                await dependencies.progress_callback(line)
+
+        # Flags on dependencies control behavior:
+        # - run_tests: if True, run tests (this will perform compilation as part
+        #   of the test lifecycle). Default: False.
+        # - run_compile: if True and run_tests is False, run a compile-only check.
+        run_tests_flag = bool(getattr(dependencies, "run_tests", False))
+        run_compile_flag = bool(getattr(dependencies, "run_compile", False))
+
+        if build_info is not None and build_info.tool != "unknown":
+            if run_tests_flag:
+                # Run tests (includes compilation)
+                test_result = await run_java_tests(
+                    repo_path=Path(str(repo_path_str)),
+                    build_tool_info=build_info,
+                    test_pattern=None,
+                    progress_callback=_forward if dependencies.progress_callback else None,
+                )
+                tests_summary = test_result
+            elif run_compile_flag:
+                # Run compile-only (fast check)
+                compile_result = await compile_java_project(
+                    repo_path=Path(str(repo_path_str)),
+                    build_tool_info=build_info,
+                    clean=False,
+                    skip_tests=True,
+                    progress_callback=_forward if dependencies.progress_callback else None,
+                )
+                compilation_summary = compile_result
+
+    except Exception as e:
+        logger.warning(f"Pre-validation build/run failed: {e}")
+
+    # Prepare validation prompt including concrete compile/test output summaries
     prompt = f"""Validate the following code changes:
 
 Plan ID: {code_changes.plan_id}
@@ -770,6 +825,31 @@ Code Changes Summary:
   Changes: +{change.lines_added}, -{change.lines_removed}
 """
 
+    # Append build/test outputs if available
+    if compilation_summary is not None:
+        prompt += f"""
+
+Compilation Summary:
+Success: {compilation_summary.success}
+Errors: {len(compilation_summary.errors)}
+Warnings: {len(compilation_summary.warnings)}
+Duration (ms): {int(compilation_summary.duration_ms)}
+Raw Output (truncated):\n{compilation_summary.stdout[:4000]}
+"""
+
+    if tests_summary is not None:
+        prompt += f"""
+
+Test Summary:
+Success: {tests_summary.success}
+Tests Run: {tests_summary.tests_run}
+Passed: {tests_summary.tests_passed}
+Failed: {tests_summary.tests_failed}
+Skipped: {tests_summary.tests_skipped}
+Duration (ms): {int(tests_summary.duration_ms)}
+Raw Output (truncated):\n{tests_summary.stdout[:4000]}
+"""
+
     prompt += """
 
 Please validate these changes by checking:
@@ -782,7 +862,7 @@ Please validate these changes by checking:
 Provide a comprehensive ValidationResult with all checks and confidence metrics.
 """
 
-    # Run the agent
+    # Run the agent (LLM) with the factual build/test outputs included
     result = await validator_agent.run(prompt, deps=dependencies)
 
     # Calculate duration
@@ -791,23 +871,84 @@ Provide a comprehensive ValidationResult with all checks and confidence metrics.
     # Extract ValidationResult
     validation_result: ValidationResult = result.output
 
+    # If compilation/tests were executed above, ensure the ValidationResult fields
+    # reflect the real execution results so downstream logic can act deterministically.
+    try:
+        if compilation_summary is not None:
+            validation_result.compilation_passed = compilation_summary.success
+            # Add a maven_compile check if not present
+            if not any(c.name == "maven_compile" for c in validation_result.checks):
+                from repoai.models.validation_result import ValidationCheck, ValidationCheckResult
+
+                cc = ValidationCheckResult(
+                    name="maven_compile",
+                    result=ValidationCheck(
+                        check_name="maven_compile",
+                        passed=compilation_summary.success,
+                        issues=[str(e) for e in compilation_summary.errors],
+                        compilation_errors=[str(e) for e in compilation_summary.errors],
+                        details=None,
+                    ),
+                )
+                validation_result.checks.append(cc)
+
+        if tests_summary is not None:
+            validation_result.junit_test_results = validation_result.junit_test_results or None
+            # Attach junit test results
+            from repoai.models.validation_result import (
+                JUnitTestResults,
+                ValidationCheck,
+                ValidationCheckResult,
+            )
+
+            junit = JUnitTestResults(
+                tests_run=tests_summary.tests_run,
+                tests_passed=tests_summary.tests_passed,
+                tests_failed=tests_summary.tests_failed,
+                tests_skipped=tests_summary.tests_skipped,
+            )
+            validation_result.junit_test_results = junit
+
+            if not any(c.name == "junit_tests" for c in validation_result.checks):
+                cc = ValidationCheckResult(
+                    name="junit_tests",
+                    result=ValidationCheck(
+                        check_name="junit_tests",
+                        passed=tests_summary.success,
+                        issues=[
+                            f"{f.test_class}.{f.test_method}: {f.message}"
+                            for f in tests_summary.failures
+                        ],
+                        details=None,
+                    ),
+                )
+                validation_result.checks.append(cc)
+
+    except Exception:
+        # If anything goes wrong while annotating, continue — LLM result still valuable
+        logger.exception("Failed to annotate ValidationResult with real build/test outputs")
+
     # Get model used
     model_used = adapter.get_spec(role=ModelRole.CODER).model_id
+
+    # Safely extract confidence overall value if present
+    conf_obj = getattr(validation_result, "confidence", None)
+    overall_conf = conf_obj.overall_confidence if conf_obj is not None else 0.0
 
     # Create Metadata
     metadata = RefactorMetadata(
         timestamp=datetime.now(),
         agent_name="ValidatorAgent",
         model_used=model_used,
-        confidence_score=validation_result.confidence.overall_confidence,
+        confidence_score=overall_conf,
         reasoning_chain=[
             f"Validated {len(code_changes.changes)} code changes",
             f"Compilation check: {'PASS' if validation_result.compilation_passed else 'FAIL'}",
             f"Total checks: {len(validation_result.checks)}",
             f"Failed checks: {len(validation_result.failed_checks)}",
-            f"Confidence: {validation_result.confidence.overall_confidence:.2f}",
+            f"Confidence: {overall_conf}",
         ],
-        data_sources=["code_changes", "static_analysis", "quality_checks"],
+        data_sources=["code_changes", "static_analysis", "quality_checks", "build_outputs"],
         execution_time_ms=duration_ms,
     )
 
@@ -818,7 +959,7 @@ Provide a comprehensive ValidationResult with all checks and confidence metrics.
         f"Validator Agent completed: "
         f"passed={validation_result.passed}, "
         f"checks={len(validation_result.checks)}, "
-        f"confidence={validation_result.confidence.overall_confidence:.2f}, "
+        f"confidence={overall_conf}, "
         f"duration={duration_ms:.0f}ms"
     )
 

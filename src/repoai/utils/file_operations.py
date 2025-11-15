@@ -382,3 +382,31 @@ async def cleanup_backup(backup_dir: Path) -> None:
     except Exception as e:
         logger.error(f"Failed to cleanup backup: {e}")
         # Don't raise exception for cleanup failures
+
+
+async def cleanup_cloned_repo(repo_path: Path) -> None:
+    """
+    Safely remove a cloned repository directory. This will only remove the
+    directory if it appears to be inside a `cloned_repos` parent directory
+    to avoid accidental deletions outside expected locations.
+
+    Args:
+        repo_path: Repository directory to remove
+    """
+    try:
+        # Basic safety check: only allow cleanup if path contains 'cloned_repos'
+        repo_path = repo_path.resolve()
+        if "cloned_repos" not in str(repo_path):
+            logger.warning(f"Refusing to remove repository outside 'cloned_repos': {repo_path}")
+            return
+
+        if not repo_path.exists():
+            logger.warning(f"Repository path does not exist, skipping cleanup: {repo_path}")
+            return
+
+        shutil.rmtree(repo_path)
+        logger.info(f"Cleaned up cloned repository: {repo_path}")
+
+    except Exception as e:
+        logger.error(f"Failed to cleanup cloned repository {repo_path}: {e}")
+        # Don't raise on cleanup failures

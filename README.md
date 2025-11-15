@@ -1,6 +1,6 @@
 # RepoAI – AI Service Overview
 
-RepoAI is the intelligent core of the refactoring assistant.  It receives user prompts and repository access data from the backend, orchestrates specialized AI agents and returns validated, refactored code with supporting evidence.
+RepoAI_AI is the intelligent core of the refactoring assistant (RepoAI).  It receives user prompts and repository access data from the backend, orchestrates specialized AI agents and returns validated, refactored code with supporting evidence.
 
 > **📁 Workspace Structure:** See [WORKSPACE_STRUCTURE.md](./WORKSPACE_STRUCTURE.md) for the full directory layout and code organization.
 

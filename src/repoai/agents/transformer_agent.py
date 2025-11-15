@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import difflib
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.usage import UsageLimits
 
 from repoai.dependencies.base import TransformerDependencies
 from repoai.explainability import RefactorMetadata
@@ -369,7 +370,7 @@ public @interface {class_name} {{
 
             # For large files, extract only relevant context
             line_count = len(code.split("\n"))
-            if line_count > 500:
+            if line_count > 200:
                 logger.info(f"Large file detected ({line_count} lines), using AST extraction")
                 intent = (
                     ctx.deps.plan.job_id.split("_")[-1]
@@ -709,6 +710,7 @@ async def run_transformer_agent(
     plan: RefactorPlan,
     dependencies: TransformerDependencies,
     adapter: PydanticAIAdapter | None = None,
+    batch_size: int = 4,
 ) -> tuple[CodeChanges, RefactorMetadata]:
     """
     Run the Transformer Agent for all steps in a RefactorPlan.
@@ -748,14 +750,25 @@ async def run_transformer_agent(
     # Track timing
     start_time = time.time()
 
-    # Process each step
+    # Process steps in batches when batch_size > 1
     all_changes: list[CodeChange] = []
 
-    for step in plan.steps:
-        logger.info(f"Processing step {step.step_number}/{plan.total_steps}: {step.action}")
+    # Helper to iterate over steps in chunks
+    def _chunks(lst: list[Any], n: int) -> Iterator[list[Any]]:
+        for i in range(0, len(lst), n):
+            yield lst[i : i + n]
 
-        # Prepare prompt for this step
-        prompt = f"""Generate Java code for the following refactoring step:
+    async def _process_chunk(step_chunk: list[Any], current_batch: int) -> CodeChanges:
+        """Process a chunk of steps with adaptive fallback on token/context errors.
+
+        Tries to run the model on the provided chunk. On token/context related errors,
+        it will retry with a smaller batch (half) and eventually fall back to single-step processing.
+        """
+        try:
+            # Build prompt for single or multiple steps
+            if len(step_chunk) == 1:
+                step = step_chunk[0]
+                prompt = f"""Generate Java code for the following refactoring step:
 
 Step Number: {step.step_number}
 Action: {step.action}
@@ -777,33 +790,140 @@ Generate the complete code change including:
 3. List of methods added/modified
 4. List of annotations used
 """
+            else:
+                prompt_parts = [
+                    "Generate Java code for the following refactoring steps (batch):\n",
+                ]
+                for step in step_chunk:
+                    prompt_parts.append(
+                        f"---\nStep Number: {step.step_number}\nAction: {step.action}\nDescription: {step.description}\n\n"
+                        f"Target Files: {', '.join(step.target_files)}\nTarget Classes: {', '.join(step.target_classes) if step.target_classes else 'N/A'}\n"
+                    )
 
-        # Run the agent for this step with increased usage limits
-        # (default is 50 requests, but complex refactorings may need more)
-        from pydantic_ai import UsageLimits
+                prompt_parts.append(
+                    "\nFor each step, generate the complete code changes as a structured list including:\n"
+                    "1) Full file content (original and modified)\n2) List of imports added/removed\n"
+                    "3) List of methods added/modified\n4) List of annotations used\nSeparate each step's output clearly and label it with the Step Number."
+                )
+                prompt = "\n".join(prompt_parts)
 
-        result = await transformer_agent.run(
-            prompt, deps=dependencies, usage_limits=UsageLimits(request_limit=200)
+            # Determine effective batch/token settings. If caller requested batch_size<=0
+            # or a batch >= all steps, treat as "all-steps" and increase token budget.
+            effective_batch = current_batch
+            if current_batch <= 0 or current_batch >= len(plan.steps):
+                effective_batch = len(plan.steps)
+
+            default_max = getattr(dependencies, "max_tokens", 8192)
+            # If processing all steps at once, give a larger budget, but keep conservative limits
+            if effective_batch >= len(plan.steps):
+                effective_max_tokens = max(default_max, 16000)
+            else:
+                effective_max_tokens = default_max
+
+            result = await transformer_agent.run(
+                prompt,
+                deps=dependencies,
+                usage_limits=UsageLimits(request_limit=200),
+                model_settings={"max_tokens": effective_max_tokens},
+            )
+            return result.output
+
+        except Exception as e:
+            error_msg = str(e)
+            is_context_error = any(
+                pattern in error_msg
+                for pattern in [
+                    "MALFORMED_FUNCTION_CALL",
+                    "MAX_TOKENS",
+                    "token limit",
+                    "context length",
+                    "UnexpectedModelBehavior",
+                ]
+            )
+
+            if is_context_error and current_batch > 1:
+                # Retry with smaller batches: first try halving, then fall back to single-step
+                smaller = max(1, current_batch // 2)
+                if smaller < current_batch:
+                    results: list[CodeChanges] = []
+                    for sub_chunk in _chunks(step_chunk, smaller):
+                        sub_result = await _process_chunk(sub_chunk, smaller)
+                        results.append(sub_result)
+
+                    # Merge collected CodeChanges into one CodeChanges-like container
+                    merged = CodeChanges(
+                        plan_id=plan.plan_id,
+                        changes=[c for r in results for c in r.changes],
+                        files_modified=sum(
+                            1 for r in results for c in r.changes if c.change_type == "modified"
+                        ),
+                        files_created=sum(
+                            1 for r in results for c in r.changes if c.change_type == "created"
+                        ),
+                        files_deleted=sum(
+                            1 for r in results for c in r.changes if c.change_type == "deleted"
+                        ),
+                        lines_added=sum(c.lines_added for r in results for c in r.changes),
+                        lines_removed=sum(c.lines_removed for r in results for c in r.changes),
+                        classes_created=sum(
+                            1
+                            for r in results
+                            for c in r.changes
+                            if c.change_type == "created" and c.class_name
+                        ),
+                    )
+                    return merged
+
+                # As a final fallback, process each step individually
+                merged_changes: list[CodeChange] = []
+                for s in step_chunk:
+                    single_result = await _process_chunk([s], 1)
+                    merged_changes.extend(single_result.changes)
+
+                merged = CodeChanges(
+                    plan_id=plan.plan_id,
+                    changes=merged_changes,
+                    files_modified=sum(1 for c in merged_changes if c.change_type == "modified"),
+                    files_created=sum(1 for c in merged_changes if c.change_type == "created"),
+                    files_deleted=sum(1 for c in merged_changes if c.change_type == "deleted"),
+                    lines_added=sum(c.lines_added for c in merged_changes),
+                    lines_removed=sum(c.lines_removed for c in merged_changes),
+                    classes_created=sum(
+                        1 for c in merged_changes if c.change_type == "created" and c.class_name
+                    ),
+                )
+                return merged
+            else:
+                # Re-raise non-context errors
+                raise
+
+    # Process chunks with adaptive behavior using _process_chunk and merge results
+    for chunk_idx, step_chunk in enumerate(_chunks(plan.steps, max(1, batch_size)), start=1):
+        current_batch = len(step_chunk)
+        logger.info(
+            f"Processing chunk {chunk_idx} (steps {step_chunk[0].step_number}-{step_chunk[-1].step_number}) with batch_size={current_batch}"
         )
-        code_changes_result: CodeChanges = result.output
 
-        # Extract all changes from the result
+        # Use adaptive _process_chunk which will retry with smaller batches on token errors
+        code_changes_result = await _process_chunk(step_chunk, current_batch)
+
+        # Merge returned changes
         for code_change in code_changes_result.changes:
-            # Ensure change_type is set
             if not code_change.change_type:
-                if step.action.startswith("create_"):
+                if any(s.action.startswith("create_") for s in step_chunk):
                     code_change.change_type = "created"
-                elif step.action.startswith("delete_"):
+                elif any(s.action.startswith("delete_") for s in step_chunk):
                     code_change.change_type = "deleted"
                 else:
                     code_change.change_type = "modified"
 
             all_changes.append(code_change)
-        logger.info(
-            f"Step {step.step_number} completed: "
-            f"{code_change.change_type} {code_change.file_path} "
-            f"(+{code_change.lines_added}, -{code_change.lines_removed})"
-        )
+
+        if code_changes_result.changes:
+            last_change = code_changes_result.changes[-1]
+            logger.info(
+                f"Chunk {chunk_idx} completed: {last_change.change_type} {last_change.file_path} (+{last_change.lines_added}, -{last_change.lines_removed})"
+            )
 
     # Calculate duration
     duration_ms = (time.time() - start_time) * 1000
@@ -877,6 +997,7 @@ async def transform_with_streaming(
     dependencies: TransformerDependencies,
     adapter: PydanticAIAdapter | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    batch_size: int = 4,
 ) -> AsyncIterator[tuple[CodeChange, RefactorMetadata]]:
     """
     Stream code changes as they are generated (file-level streaming).
@@ -942,30 +1063,75 @@ async def transform_with_streaming(
     file_count = 0
 
     # Process each step in the refactoring plan
-    for step_idx, step in enumerate(plan.steps, start=1):
-        # Track files changed in this specific step
+    # Helper to chunk steps
+    def _chunks(lst: list[Any], n: int) -> Iterator[list[Any]]:
+        for i in range(0, len(lst), n):
+            yield lst[i : i + n]
+
+    for chunk_idx, step_group in enumerate(_chunks(plan.steps, max(1, batch_size)), start=1):
+        # Track files changed in this specific batch
         step_files: list[CodeChange] = []
 
-        # Send "Processing step X/Y" message
+        # Batch info
+        batch_start = step_group[0].step_number
+        batch_end = step_group[-1].step_number
+        step_numbers = ", ".join(str(s.step_number) for s in step_group)
+        actions = ", ".join(s.action for s in step_group)
+
+        # Send batch-level "Proceeding Batch" message
         if progress_callback:
-            progress_callback(f"⚙️  Processing step {step_idx}/{len(plan.steps)}: {step.action}")
+            progress_callback(
+                f"Proceeding Batch {chunk_idx}: Steps {step_numbers} - Actions: {actions}"
+            )
 
-        logger.info(f"Streaming step {step_idx}/{len(plan.steps)}: {step.description}")
-
-        # Build prompt for streaming
-        prompt = build_transformer_prompt_streaming(
-            step=step,
-            dependencies=dependencies,
-            estimated_duration=plan.estimated_duration,
-        )
+        # Build prompt for streaming (single-step or combined)
+        if batch_size <= 1:
+            step = step_group[0]
+            logger.info(f"Streaming step {step.step_number}/{len(plan.steps)}: {step.description}")
+            prompt = build_transformer_prompt_streaming(
+                step=step,
+                dependencies=dependencies,
+                estimated_duration=plan.estimated_duration,
+            )
+        else:
+            logger.info(
+                f"Streaming step chunk {chunk_idx} (steps {step_group[0].step_number}-{step_group[-1].step_number})"
+            )
+            # Concatenate per-step streaming prompts into a single batch prompt
+            prompts = []
+            for s in step_group:
+                prompts.append(
+                    build_transformer_prompt_streaming(
+                        step=s,
+                        dependencies=dependencies,
+                        estimated_duration=plan.estimated_duration,
+                    )
+                )
+            # Join with clear separators so model outputs remain separable
+            prompt = "\n\n---\n\n".join(prompts)
 
         # Use the transformer agent directly to enable tool calling during streaming
         # This allows the LLM to call get_file_context and add_maven_dependency tools
         try:
+            # Determine effective batch/token for streaming. If caller passed batch_size
+            # <= 0 or a batch >= plan length, request a larger token budget.
+            effective_batch_size = batch_size
+            if batch_size <= 0 or batch_size >= len(plan.steps):
+                effective_batch_size = len(plan.steps)
+
+            default_max_tok = getattr(dependencies, "max_tokens", 8192)
+            if effective_batch_size >= len(plan.steps):
+                stream_max_tokens = max(default_max_tok, 30000)
+            else:
+                stream_max_tokens = default_max_tok
+
             async with transformer_agent.run_stream(
                 prompt,
                 deps=dependencies,
-                model_settings={"temperature": 0.3, "max_tokens": 8192},
+                model_settings={
+                    "temperature": 0.3,
+                    "max_tokens": stream_max_tokens,
+                },
             ) as stream:
                 async for partial_changes in stream.stream_output():
                     # Detect newly added files in the partial response
@@ -1022,7 +1188,7 @@ async def transform_with_streaming(
                             metadata.execution_time_ms = (current_time - start_time) * 1000
                             metadata.model_used = "gemini-2.5-flash"  # TODO: Get from adapter
                             metadata.data_sources = [
-                                f"step:{step_idx}/{len(plan.steps)}",
+                                f"step:{batch_start}-{batch_end}/{len(plan.steps)}",
                                 f"file:{change.file_path}",
                                 f"files_total:{file_count}",
                                 f"lines_added:{total_lines_added}",
@@ -1037,9 +1203,8 @@ async def transform_with_streaming(
                             # Yield immediately for real-time processing (only new files)
                             yield change, metadata
 
-            # Send step completion message with file contents summary
+            # Send batch completion message with file contents summary
             if progress_callback and step_files:
-                # Build summary with file contents
                 files_summary = "\n".join(
                     [
                         f"  • {change.file_path} ({change.change_type}): "
@@ -1048,8 +1213,7 @@ async def transform_with_streaming(
                     ]
                 )
                 progress_callback(
-                    f"✅ Step {step_idx}/{len(plan.steps)} completed: {step.action}\n"
-                    f"Files changed ({len(step_files)}):\n{files_summary}"
+                    f"Batch {chunk_idx} Completed: Steps {step_numbers}. Files changed ({len(step_files)}):\n{files_summary}"
                 )
 
         except Exception as e:
@@ -1067,44 +1231,136 @@ async def transform_with_streaming(
                 ]
             )
 
-            if is_context_error:
-                # Log concisely without dumping the entire error object
+            if is_context_error and batch_size > 1:
+                # Retry this chunk by splitting into progressively smaller combined batches
+                # rather than immediately single-stepping. This keeps the model able to
+                # reason about multiple steps together while avoiding token limits.
                 logger.warning(
-                    f"Step {step_idx} hit token/context limit (MALFORMED_FUNCTION_CALL). "
-                    f"Prompt tokens: Check logs for details."
+                    f"Chunk {chunk_idx} hit token/context limit. Retrying with smaller combined batches."
                 )
                 if progress_callback:
                     progress_callback(
-                        f"⚠️  Step {step_idx} context too large, simplifying and retrying..."
+                        f"⚠️  Chunk {chunk_idx} token limit exceeded, retrying with smaller batches..."
                     )
 
-                # Provide clean error message for users
-                error_msg = (
-                    f"Token limit exceeded for step {step_idx}. "
-                    "The prompt is too large for the model to process. "
-                    "Try breaking this step into smaller sub-steps."
-                )
+                # Iteratively halve the group size until we can stream successfully
+                group_size = len(step_group)
+                attempted = False
+                while group_size >= 1:
+                    sub_batch = max(1, group_size)
+                    for sub_chunk in _chunks(step_group, sub_batch):
+                        # Build combined prompt for this sub-chunk
+                        prompts = [
+                            build_transformer_prompt_streaming(
+                                step=s,
+                                dependencies=dependencies,
+                                estimated_duration=plan.estimated_duration,
+                            )
+                            for s in sub_chunk
+                        ]
+                        combined_prompt = "\n\n---\n\n".join(prompts)
 
-                # Send error message
-                if progress_callback:
-                    progress_callback(f"❌ Step {step_idx} failed: {error_msg}")
+                        try:
+                            async with transformer_agent.run_stream(
+                                combined_prompt,
+                                deps=dependencies,
+                                model_settings={
+                                    "temperature": 0.3,
+                                    "max_tokens": stream_max_tokens,
+                                },
+                            ) as sub_stream:
+                                async for partial_changes in sub_stream.stream_output():
+                                    for change in partial_changes.changes:
+                                        if change.file_path not in files_seen:
+                                            files_seen.add(change.file_path)
+                                            file_count += 1
 
-                # Update metadata with clean error
-                metadata.risk_factors.append(f"error:token_limit_step_{step_idx}")
+                                            # calculate metrics and yield as above
+                                            lines_added, lines_removed = _calculate_diff_stats(
+                                                change.diff
+                                            )
+                                            if lines_added == 0 and lines_removed == 0:
+                                                if (
+                                                    change.modified_content
+                                                    and change.original_content
+                                                ):
+                                                    lines_added = len(
+                                                        [
+                                                            line
+                                                            for line in change.modified_content.splitlines()
+                                                            if line.strip()
+                                                        ]
+                                                    )
+                                                    lines_removed = len(
+                                                        [
+                                                            line
+                                                            for line in change.original_content.splitlines()
+                                                            if line.strip()
+                                                        ]
+                                                    )
+                                                elif (
+                                                    change.modified_content
+                                                    and not change.original_content
+                                                ):
+                                                    lines_added = len(
+                                                        [
+                                                            line
+                                                            for line in change.modified_content.splitlines()
+                                                            if line.strip()
+                                                        ]
+                                                    )
+                                                    lines_removed = 0
 
-                # Raise a cleaner exception
-                raise RuntimeError(error_msg) from None
-            else:
-                # For non-context errors, log the actual error
-                logger.error(f"Error streaming step {step_idx}: {error_msg}")
+                                            total_lines_added += lines_added
+                                            total_lines_removed += lines_removed
+                                            change.lines_added = lines_added
+                                            change.lines_removed = lines_removed
 
-                # Send error message
-                if progress_callback:
-                    progress_callback(f"❌ Step {step_idx} failed: {error_msg}")
+                                            current_time = time.time()
+                                            metadata.execution_time_ms = (
+                                                current_time - start_time
+                                            ) * 1000
+                                            metadata.model_used = "gemini-2.5-flash"
+                                            metadata.data_sources = [
+                                                f"step:{sub_chunk[0].step_number}/{len(plan.steps)}",
+                                                f"file:{change.file_path}",
+                                                f"files_total:{file_count}",
+                                                f"lines_added:{total_lines_added}",
+                                                f"lines_removed:{total_lines_removed}",
+                                            ]
 
-                # Update metadata with error
-                metadata.risk_factors.append(f"error:{error_msg[:200]}")
-                raise
+                                            logger.debug(
+                                                f"Yielding file {file_count}: {change.file_path} "
+                                                f"(+{lines_added}/-{lines_removed} lines)"
+                                            )
+                                            yield change, metadata
+
+                            attempted = True
+
+                        except Exception as sub_e:
+                            # If sub-chunk also triggers token/context errors, we'll halve further
+                            sub_err = str(sub_e)
+                            logger.warning(f"Sub-batch failed: {sub_err}")
+                            continue
+
+                    # If we made progress with this group_size, break out
+                    if attempted:
+                        break
+
+                    # Halve the group size and retry
+                    if group_size == 1:
+                        break
+                    group_size = max(1, group_size // 2)
+
+                # After retrying with smaller combined batches, continue to next chunk
+                continue
+
+            # Non-recoverable error or single-step token error
+            logger.error(f"Error streaming chunk {chunk_idx}: {error_msg}")
+            if progress_callback:
+                progress_callback(f"❌ Step/chunk {chunk_idx} failed: {error_msg}")
+            metadata.risk_factors.append(f"error:{error_msg[:200]}")
+            raise
 
     # Final metadata update
     end_time = time.time()

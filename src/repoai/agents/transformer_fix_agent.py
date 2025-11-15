@@ -1,17 +1,12 @@
-"""
-Transformer Fix Agent - Generates targeted fixes for validation errors.
+"""Cleaned Transformer Fix Agent implementation (AST-excerpting, conservative budgets)."""
 
-This agent is specifically designed for retry scenarios where validation has failed.
-Instead of regenerating all files, it generates ONLY fixes for the broken files.
-"""
-
-import time
 from pathlib import Path
 
 from repoai.dependencies import TransformerDependencies
 from repoai.llm.pydantic_ai_adapter import PydanticAIAdapter
 from repoai.models.code_changes import CodeChange, CodeChanges
 from repoai.models.validation_result import ValidationResult
+from repoai.parsers.java_ast_parser import extract_relevant_context
 from repoai.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,48 +18,20 @@ async def generate_fixes_for_errors(
     dependencies: TransformerDependencies,
     adapter: PydanticAIAdapter,
 ) -> list[CodeChange]:
-    """
-    Generate targeted fixes for specific compilation errors.
-
-    Instead of regenerating all files, this function:
-    1. Identifies which files have errors
-    2. Reads current file content from disk
-    3. Generates fixes for ONLY those files
-    4. Returns CodeChange objects for the fixes
-
-    Args:
-        validation_result: Validation result with compilation errors
-        fix_instructions: LLM-generated fix instructions
-        dependencies: Transformer dependencies with repository path
-        adapter: PydanticAIAdapter for LLM calls
-
-    Returns:
-        List of CodeChange objects with fixes
-
-    Example:
-        fixes = await generate_fixes_for_errors(
-            validation_result, fix_instructions, deps, adapter
-        )
-        for fix in fixes:
-            await apply_code_change(fix, repo_path, backup_dir)
-    """
     from repoai.llm import ModelRole
 
     logger.info("Generating targeted fixes for validation errors...")
 
-    # Extract files with errors from validation result
     error_files = _extract_error_files(validation_result)
-    logger.info(f"Found {len(error_files)} files with errors")
-
     if not error_files:
         logger.warning("No error files found, returning empty list")
         return []
 
-    # Read current content of error files
     if not dependencies.repository_path:
         raise ValueError("Repository path is required")
     repo_path = Path(dependencies.repository_path)
-    file_contents = {}
+
+    file_contents: dict[str, str] = {}
     for file_path in error_files:
         full_path = repo_path / file_path
         if full_path.exists():
@@ -72,66 +39,105 @@ async def generate_fixes_for_errors(
         else:
             logger.warning(f"File not found: {file_path}")
 
-    # Build fix prompt
-    prompt = _build_fix_prompt(validation_result, fix_instructions, file_contents)
+    # AST-based excerpting for large files
+    processed_file_contents: dict[str, str] = {}
+    excerpt_line_threshold = 200
+    excerpt_char_threshold = 8000
+    intent = getattr(getattr(dependencies, "plan", None), "job_id", "fix")
+    intent = intent.split("_")[-1] if isinstance(intent, str) else "fix"
 
-    # Call LLM to generate fixes
-    logger.debug("Calling LLM to generate fixes...")
-    start_time = time.time()
+    for fp, content in file_contents.items():
+        try:
+            if (
+                len(content) > excerpt_char_threshold
+                or len(content.splitlines()) > excerpt_line_threshold
+            ):
+                try:
+                    excerpt = extract_relevant_context(content, intent)
+                    processed_file_contents[fp] = (
+                        f"// EXCERPTED CONTEXT for {fp} (excerpted - full file available on disk)\n"
+                        + excerpt
+                    )
+                except Exception as e:
+                    logger.warning(f"AST excerpt failed for {fp}: {e}")
+                    processed_file_contents[fp] = content
+            else:
+                processed_file_contents[fp] = content
+        except Exception:
+            processed_file_contents[fp] = content
 
-    # Use CODER role for fix generation
-    response_str = await adapter.run_raw_async(
-        role=ModelRole.CODER,
-        messages=[{"content": prompt}],
-        temperature=0.2,  # Low temperature for deterministic fixes
-        max_output_tokens=8192,
-    )
+    prompt = _build_fix_prompt(validation_result, fix_instructions, processed_file_contents)
 
-    # Parse response into CodeChanges
-    import json
+    total_chars = sum(len(c) for c in processed_file_contents.values())
+    max_single_call_chars = 12_000
 
-    response_data = json.loads(response_str)
-    code_changes = CodeChanges(**response_data)
+    aggregated_changes: list[CodeChange] = []
+    if total_chars > max_single_call_chars or len(processed_file_contents) > 3:
+        # per-file generation
+        for file_path, content in processed_file_contents.items():
+            per_prompt = _build_fix_prompt(
+                validation_result, fix_instructions, {file_path: content}
+            )
+            try:
+                per_code_changes: CodeChanges = await adapter.run_json_async(
+                    role=ModelRole.CODER,
+                    schema=CodeChanges,
+                    messages=[{"content": per_prompt}],
+                    temperature=0.15,
+                    max_output_tokens=8000,
+                    use_fallback=True,
+                )
+                aggregated_changes.extend(per_code_changes.changes)
+            except Exception as e:
+                logger.error(f"Per-file generation failed for {file_path}: {e}")
+                continue
+        return aggregated_changes
 
-    duration_ms = (time.time() - start_time) * 1000
-    logger.info(f"LLM generated {len(code_changes.changes)} fixes in {duration_ms:.0f}ms")
-
-    # Return the fixes
-    return code_changes.changes
+    try:
+        code_changes: CodeChanges = await adapter.run_json_async(
+            role=ModelRole.CODER,
+            schema=CodeChanges,
+            messages=[{"content": prompt}],
+            temperature=0.2,
+            max_output_tokens=16000,
+            use_fallback=True,
+        )
+        return code_changes.changes
+    except Exception as e:
+        logger.error(f"Single-call fix generation failed: {e}")
+        # fallback to per-file
+        for file_path, content in processed_file_contents.items():
+            per_prompt = _build_fix_prompt(
+                validation_result, fix_instructions, {file_path: content}
+            )
+            try:
+                fallback_code_changes: CodeChanges = await adapter.run_json_async(
+                    role=ModelRole.CODER,
+                    schema=CodeChanges,
+                    messages=[{"content": per_prompt}],
+                    temperature=0.2,
+                    max_output_tokens=8000,
+                    use_fallback=True,
+                )
+                aggregated_changes.extend(fallback_code_changes.changes)
+            except Exception as ex:
+                logger.error(f"Fallback per-file generation failed for {file_path}: {ex}")
+                continue
+        return aggregated_changes
 
 
 def _extract_error_files(validation_result: ValidationResult) -> set[str]:
-    """
-    Extract unique file paths that have compilation errors.
-
-    Args:
-        validation_result: Validation result with errors
-
-    Returns:
-        Set of file paths with errors
-    """
     error_files = set()
-
-    # Extract from compilation_errors
     for check in validation_result.checks:
         if check.result.compilation_errors:
             for error_str in check.result.compilation_errors:
-                # Parse file path from error string
-                # Format: "[ERROR] /path/to/file.java:[line,col] message"
-                # or: "src/main/java/File.java:[10,5] error message"
                 parts = error_str.split(":")
                 if parts:
-                    file_part = parts[0]
-                    # Remove [ERROR] prefix if present
-                    file_part = file_part.replace("[ERROR]", "").strip()
-                    # Extract relative path
+                    file_part = parts[0].replace("[ERROR]", "").strip()
                     if "src/" in file_part:
-                        # Find src/ and take everything after it
                         src_index = file_part.find("src/")
                         if src_index >= 0:
-                            relative_path = file_part[src_index:]
-                            error_files.add(relative_path)
-
+                            error_files.add(file_part[src_index:])
     return error_files
 
 
@@ -140,59 +146,23 @@ def _build_fix_prompt(
     fix_instructions: str,
     file_contents: dict[str, str],
 ) -> str:
-    """
-    Build prompt for LLM to generate fixes.
-
-    Args:
-        validation_result: Validation result with errors
-        fix_instructions: LLM-generated fix instructions
-        file_contents: Current content of files with errors
-
-    Returns:
-        Prompt string for LLM
-    """
-    prompt = f"""You are fixing compilation errors in a Java project.
-
-**FIX INSTRUCTIONS FROM ANALYSIS:**
-{fix_instructions}
-
-**COMPILATION ERRORS:**
-"""
-
-    # Add compilation errors
+    parts = [
+        "You are fixing compilation errors in a Java project.",
+        "\n**FIX INSTRUCTIONS FROM ANALYSIS:**\n",
+        fix_instructions,
+        "\n**COMPILATION ERRORS:**\n",
+    ]
     for check in validation_result.checks:
         if check.result.compilation_errors:
-            prompt += "\n".join(check.result.compilation_errors[:10])  # Limit to 10 errors
-
-    prompt += "\n\n**CURRENT FILE CONTENTS:**\n"
-
-    # Add current file contents
-    for file_path, content in file_contents.items():
-        prompt += f"\n### {file_path}\n```java\n{content}\n```\n"
-
-    prompt += """
-
-**TASK:**
-Generate fixes for the files above. For each file:
-1. Identify the root cause of the error
-2. Generate the corrected version
-3. Include proper diffs
-
-**OUTPUT:**
-Return a CodeChanges object with ONLY the files that need fixes.
-Each CodeChange should have:
-- file_path: relative path (e.g., "src/main/java/...")
-- change_type: "MODIFIED"
-- original_content: current content
-- modified_content: fixed content
-- diff: unified diff
-- All other required fields
-
-**IMPORTANT:**
-- Fix ONLY the specific errors mentioned
-- Don't refactor unrelated code
-- Maintain existing structure and style
-- Include proper imports
-"""
-
-    return prompt
+            parts.append("\n".join(check.result.compilation_errors[:10]))
+    parts.append("\n\n**CURRENT FILE CONTENTS (excerpted when large):**\n")
+    for fp, content in file_contents.items():
+        parts.append(f"\n### {fp}\n```java\n{content}\n```\n")
+    parts.append(
+        "\n**TASK:**\nFor each file above: identify the root cause, provide corrected file content, and include a unified diff.\n"
+    )
+    parts.append(
+        "\nSpecial rules: prefer updating call sites/tests when signatures changed; avoid unrelated refactors.\n"
+    )
+    parts.append("\nReturn a JSON CodeChanges structure containing only fixed files.\n")
+    return "\n".join(parts)

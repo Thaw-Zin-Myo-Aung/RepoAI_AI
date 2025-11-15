@@ -152,6 +152,13 @@ class TransformerDependencies:
     fix_instructions: str | None = None
     """Optional fix instructions for retry scenarios (to fix validation errors)"""
 
+    # Batch and token tuning
+    batch_size: int = 4
+    """Number of plan steps to aggregate per model call by default."""
+
+    max_tokens: int = 8192
+    """Maximum tokens to request from the model for transformer calls (used in model settings)."""
+
 
 # Dependencies for the Validator Agent
 @dataclass
@@ -186,6 +193,9 @@ class ValidatorDependencies:
 
     run_static_analysis: bool = False
     """Whether to run actual static analysis tools (Checkstyle, PMD)"""
+
+    run_compile: bool = False
+    """Whether to run a compile-only check (skip tests). Use for fast validation."""
 
     max_retries: int = 2
     """Maximum number of retries for agent executions."""
@@ -288,7 +298,7 @@ class OrchestratorDependencies:
     github_credentials: "GitHubCredentials | None" = None
     """GitHub credentials for commit/push operations (required for git operations stage)"""
 
-    max_retries: int = 3
+    max_retries: int = 5
     """Maximum number of validation retry attempts"""
 
     auto_fix_enabled: bool = True
@@ -305,6 +315,13 @@ class OrchestratorDependencies:
 
     output_path: str | None = None
     """Path for writing generated files (defaults to /tmp/repoai)"""
+
+    # Transformer tuning defaults
+    transformer_batch_size: int = 4
+    """Default batch size to use when calling Transformer Agent (number of steps per batch)."""
+
+    transformer_max_tokens: int = 8192
+    """Default model max tokens to request from transformer (pass-through to model settings)."""
 
     # Chat interface callbacks (optional)
     send_message: Callable[[str], None] | None = None

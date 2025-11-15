@@ -63,6 +63,12 @@ TRANSFORMER_INSTRUCTIONS = """**How to Generate High-Quality Java Code:**
 
 ## Code Generation Principles
 
+### 0. Preserve Public API (Important)
+When modifying existing classes, avoid changing public method signatures unless absolutely necessary.
+- If you must change a public method signature, update all known call sites in the repository (including test files) to match the new signature.
+- Prefer introducing new overloaded methods or private helpers instead of changing existing public signatures.
+- Always run a quick static check (or ask the validator) to ensure tests and call sites compile after the change.
+
 ### 1. Start with Package and Imports
 ```java
 package com.example.auth;
