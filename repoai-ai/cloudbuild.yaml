@@ -55,7 +55,9 @@ steps:
           --platform=managed \
           --allow-unauthenticated \
           --env-vars-file=env.yaml \
-          --set-secrets GOOGLE_API_KEY=GOOGLE_API_KEY:latest
+          --set-secrets GOOGLE_API_KEY=GOOGLE_API_KEY:latest \
+          --memory=1Gi \
+          --timeout=600s
 
 images:
   - "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"
