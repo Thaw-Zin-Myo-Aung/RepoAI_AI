@@ -8,14 +8,18 @@ substitutions:
   _GEMINI_DEFAULT_TIMEOUT_S: "60"
   _GEMINI_MAX_RETRIES: "2"
   _EMBEDDING_MODEL: "text-embedding-004"
-  # Commas in env values are problematic for `gcloud run deploy --set-env-vars`
-  # (gcloud splits on commas). We URL-encode commas as %2C here and
-  # the app should decode (%2C -> ,) when reading these env vars.
-  _MODEL_ROUTE_ORCHESTRATOR: "gemini-2.5-flash%2Cgemini-2.0-flash-exp%2Cgemini-2.0-flash"
-  _MODEL_ROUTE_INTAKE: "gemini-2.5-flash%2Cgemini-2.0-flash-exp%2Cgemini-2.0-flash"
-  _MODEL_ROUTE_PLANNER: "gemini-2.5-pro%2Cgemini-2.5-flash%2Cgemini-2.0-flash"
-  _MODEL_ROUTE_CODER: "gemini-2.5-pro%2Cgemini-2.5-flash%2Cgemini-2.0-flash"
-  _MODEL_ROUTE_PR: "gemini-2.5-flash%2Cgemini-2.0-flash%2Cgemini-2.5-flash-lite"
+  # Model route lists (commas allowed) — we'll write these into an env file
+  # at build time and deploy using `--env-vars-file` to avoid CLI parsing issues.
+  _MODEL_ROUTE_ORCHESTRATOR: "gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
+  _MODEL_ROUTE_INTAKE: "gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
+  _MODEL_ROUTE_PLANNER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+  _MODEL_ROUTE_CODER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+  _MODEL_ROUTE_PR: "gemini-2.5-flash,gemini-2.0-flash,gemini-2.5-flash-lite"
+
+availableSecrets:
+  secretManager:
+    - versionName: "projects/gen-lang-client-0265539996/secrets/GOOGLE_API_KEY/versions/latest"
+      env: "GOOGLE_API_KEY"
 
 options:
   # Use CLOUD_LOGGING_ONLY when using a custom service account to avoid
@@ -35,14 +39,27 @@ steps:
     args:
       - -c
       - |
-        # Deploy to Cloud Run. Ensure secrets exist and Cloud Build SA has access.
+        # Create env.yaml with secret-injected GOOGLE_API_KEY and other vars
+        cat > env.yaml <<EOF
+        GOOGLE_API_KEY: "$${GOOGLE_API_KEY}"
+        GEMINI_MODEL: "$_GEMINI_MODEL"
+        GEMINI_DEFAULT_TIMEOUT_S: "$_GEMINI_DEFAULT_TIMEOUT_S"
+        GEMINI_MAX_RETRIES: "$_GEMINI_MAX_RETRIES"
+        EMBEDDING_MODEL: "$_EMBEDDING_MODEL"
+        MODEL_ROUTE_ORCHESTRATOR: "$_MODEL_ROUTE_ORCHESTRATOR"
+        MODEL_ROUTE_INTAKE: "$_MODEL_ROUTE_INTAKE"
+        MODEL_ROUTE_PLANNER: "$_MODEL_ROUTE_PLANNER"
+        MODEL_ROUTE_CODER: "$_MODEL_ROUTE_CODER"
+        MODEL_ROUTE_PR: "$_MODEL_ROUTE_PR"
+        EOF
+
+        # Deploy using env-vars-file to avoid CLI comma-parsing issues
         gcloud run deploy $_SERVICE \
           --image=$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA \
           --region=$_REGION \
           --platform=managed \
           --allow-unauthenticated \
-          --set-env-vars GEMINI_MODEL="$_GEMINI_MODEL",GEMINI_DEFAULT_TIMEOUT_S="$_GEMINI_DEFAULT_TIMEOUT_S",GEMINI_MAX_RETRIES="$_GEMINI_MAX_RETRIES",EMBEDDING_MODEL="$_EMBEDDING_MODEL",MODEL_ROUTE_ORCHESTRATOR="$_MODEL_ROUTE_ORCHESTRATOR",MODEL_ROUTE_INTAKE="$_MODEL_ROUTE_INTAKE",MODEL_ROUTE_PLANNER="$_MODEL_ROUTE_PLANNER",MODEL_ROUTE_CODER="$_MODEL_ROUTE_CODER",MODEL_ROUTE_PR="$_MODEL_ROUTE_PR" \
-          --set-secrets GOOGLE_API_KEY=GOOGLE_API_KEY:latest
+          --env-vars-file=env.yaml
 
 images:
   - "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"
