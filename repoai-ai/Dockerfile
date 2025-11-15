@@ -53,8 +53,5 @@ RUN useradd --create-home --shell /bin/bash repoai || true \
     && chown -R repoai:repoai /app
 USER repoai
 
-ENV PORT=8000
-EXPOSE ${PORT}
-
 # Default entrypoint: prefer `uv run` if present, otherwise run `uvicorn`
 ENTRYPOINT ["/bin/sh", "/app/entrypoint.sh"]
