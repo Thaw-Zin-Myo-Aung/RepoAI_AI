@@ -16,10 +16,6 @@ substitutions:
   _MODEL_ROUTE_CODER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
   _MODEL_ROUTE_PR: "gemini-2.5-flash,gemini-2.0-flash,gemini-2.5-flash-lite"
 
-availableSecrets:
-  secretManager:
-    - versionName: "projects/gen-lang-client-0265539996/secrets/GOOGLE_API_KEY/versions/latest"
-      env: "GOOGLE_API_KEY"
 
 options:
   # Use CLOUD_LOGGING_ONLY when using a custom service account to avoid
@@ -36,13 +32,11 @@ steps:
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
-    secretEnv: ["GOOGLE_API_KEY"]
     args:
       - -c
       - |
-        # Create env.yaml with secret-injected GOOGLE_API_KEY and other vars
+        # Create env.yaml with non-secret environment variables (secrets are set via --set-secrets)
         cat > env.yaml <<EOF
-        GOOGLE_API_KEY: "$${GOOGLE_API_KEY}"
         GEMINI_MODEL: "$_GEMINI_MODEL"
         GEMINI_DEFAULT_TIMEOUT_S: "$_GEMINI_DEFAULT_TIMEOUT_S"
         GEMINI_MAX_RETRIES: "$_GEMINI_MAX_RETRIES"
@@ -60,7 +54,8 @@ steps:
           --region=$_REGION \
           --platform=managed \
           --allow-unauthenticated \
-          --env-vars-file=env.yaml
+          --env-vars-file=env.yaml \
+          --set-secrets GOOGLE_API_KEY=GOOGLE_API_KEY:latest
 
 images:
   - "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"
