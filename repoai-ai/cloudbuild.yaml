@@ -1,8 +1,9 @@
 substitutions:
   _REGION: "us-central1"
-  _REPOSITORY: "repoai-images"
+  _REPOSITORY: "repoai-ai"
   _IMAGE: "repoai"
   _SERVICE: "repoai-service"
+  _PROJECT_ID: "gen-lang-client-0265539996"
   _GEMINI_MODEL: "gemini-2.0-flash-exp"
   _GEMINI_DEFAULT_TIMEOUT_S: "60"
   _GEMINI_MAX_RETRIES: "2"
@@ -15,10 +16,10 @@ substitutions:
 
 steps:
   - name: "gcr.io/cloud-builders/docker"
-    args: ["build", "-t", "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA", "."]
+    args: ["build", "-t", "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA", "."]
 
   - name: "gcr.io/cloud-builders/docker"
-    args: ["push", "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"]
+    args: ["push", "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"]
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "bash"
@@ -31,7 +32,7 @@ steps:
         # first and grant the Cloud Build service account access to them.
         # Example: --set-secrets DB_PASSWORD=DB_PASSWORD:latest,API_KEY=API_KEY:latest
         gcloud run deploy $_SERVICE \
-          --image=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA \
+          --image=$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA \
           --region=$_REGION \
           --platform=managed \
           --allow-unauthenticated \
