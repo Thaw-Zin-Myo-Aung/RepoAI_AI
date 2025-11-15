@@ -3,6 +3,15 @@ substitutions:
   _REPOSITORY: "repoai-images"
   _IMAGE: "repoai"
   _SERVICE: "repoai-service"
+  _GEMINI_MODEL: "gemini-2.0-flash-exp"
+  _GEMINI_DEFAULT_TIMEOUT_S: "60"
+  _GEMINI_MAX_RETRIES: "2"
+  _EMBEDDING_MODEL: "text-embedding-004"
+  _MODEL_ROUTE_ORCHESTRATOR: "gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
+  _MODEL_ROUTE_INTAKE: "gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
+  _MODEL_ROUTE_PLANNER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+  _MODEL_ROUTE_CODER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
+  _MODEL_ROUTE_PR: "gemini-2.5-flash,gemini-2.0-flash,gemini-2.5-flash-lite"
 
 steps:
   - name: "gcr.io/cloud-builders/docker"
@@ -27,7 +36,7 @@ steps:
           --platform=managed \
           --allow-unauthenticated \
           # Pass non-secret configuration from .env as environment variables
-          --set-env-vars PORT=8000,GEMINI_MODEL="$GEMINI_MODEL",GEMINI_DEFAULT_TIMEOUT_S="$GEMINI_DEFAULT_TIMEOUT_S",GEMINI_MAX_RETRIES="$GEMINI_MAX_RETRIES",EMBEDDING_MODEL="$EMBEDDING_MODEL",MODEL_ROUTE_ORCHESTRATOR="$MODEL_ROUTE_ORCHESTRATOR",MODEL_ROUTE_INTAKE="$MODEL_ROUTE_INTAKE",MODEL_ROUTE_PLANNER="$MODEL_ROUTE_PLANNER",MODEL_ROUTE_CODER="$MODEL_ROUTE_CODER",MODEL_ROUTE_PR="$MODEL_ROUTE_PR" \
+          --set-env-vars PORT=8000,GEMINI_MODEL="$_GEMINI_MODEL",GEMINI_DEFAULT_TIMEOUT_S="$_GEMINI_DEFAULT_TIMEOUT_S",GEMINI_MAX_RETRIES="$_GEMINI_MAX_RETRIES",EMBEDDING_MODEL="$_EMBEDDING_MODEL",MODEL_ROUTE_ORCHESTRATOR="$_MODEL_ROUTE_ORCHESTRATOR",MODEL_ROUTE_INTAKE="$_MODEL_ROUTE_INTAKE",MODEL_ROUTE_PLANNER="$_MODEL_ROUTE_PLANNER",MODEL_ROUTE_CODER="$_MODEL_ROUTE_CODER",MODEL_ROUTE_PR="$_MODEL_ROUTE_PR" \
           # Map sensitive values to Secret Manager entries (create these secrets first)
           --set-secrets GOOGLE_API_KEY=GOOGLE_API_KEY:latest
 
