@@ -21,7 +21,8 @@ options:
 
 steps:
   - name: "gcr.io/cloud-builders/docker"
-    args: ["build", "-t", "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA", "."]
+    # Build from the `repoai-ai` subdirectory where the Dockerfile lives
+    args: ["build", "-t", "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA", "repoai-ai"]
 
   - name: "gcr.io/cloud-builders/docker"
     args: ["push", "$_REGION-docker.pkg.dev/$_PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"]
