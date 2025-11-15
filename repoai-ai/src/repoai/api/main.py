@@ -65,17 +65,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        # Allow all origins so this service can be called from anywhere
-        # (useful for backend-to-backend calls, testing, and external clients).
-        # NOTE: Browsers will NOT allow credentialed requests (cookies/authorization)
-        # when Access-Control-Allow-Origin is a wildcard. For local dev (no credentials)
-        # we disable credentials so the wildcard origin works. If you need credentialed
-        # cross-origin requests, replace `"*"` with an explicit list of allowed origins
-        # (e.g., ["http://localhost:5173", "https://your-production-site.com"]) and
-        # set `allow_credentials=True`.
         "*",
     ],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
