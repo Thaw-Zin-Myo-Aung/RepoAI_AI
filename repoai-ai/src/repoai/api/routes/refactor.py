@@ -205,14 +205,15 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
             logger.info(f"SSE connected: {session_id}, buffered_messages={len(buffer)}")
             for buffered_update in buffer:
                 if buffered_update is None:
-                    # Completion signal in buffer
+                    # Completion signal in buffer: send explicit completion event
                     logger.info(f"SSE stream completed (from buffer): {session_id}")
+                    # Clear the buffer to avoid replaying on reconnects
+                    session_buffers.pop(session_id, None)
+                    # Send a final completion event and stop the generator
+                    yield {"event": "complete", "data": "{}"}
                     return
 
-                yield {
-                    "event": "progress",
-                    "data": buffered_update.model_dump_json(),
-                }
+                yield {"event": "progress", "data": buffered_update.model_dump_json()}
 
             # Clear buffer after sending
             if session_id in session_buffers:
@@ -226,6 +227,8 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
                 # Check for completion signal
                 if update is None:
                     logger.info(f"SSE stream completed: {session_id}")
+                    # Send explicit completion event to client
+                    yield {"event": "complete", "data": "{}"}
                     break
 
                 # Send progress update
@@ -242,6 +245,16 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
                 "event": "error",
                 "data": f'{{"error": "{str(e)}"}}',
             }
+        finally:
+            # Cleanup session state to avoid repeated streams on reconnect
+            try:
+                session_queues.pop(session_id, None)
+                session_buffers.pop(session_id, None)
+                confirmation_queues.pop(session_id, None)
+                active_sessions.pop(session_id, None)
+                logger.debug(f"Cleaned up SSE session state: {session_id}")
+            except Exception:
+                pass
 
     return EventSourceResponse(event_generator())
 

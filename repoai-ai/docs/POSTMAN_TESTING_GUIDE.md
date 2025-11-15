@@ -13,7 +13,7 @@ This guide walks you through testing the complete demo workflow with your privat
 
 ### 1. Start the RepoAI API Server
 ```bash
-cd /home/timmy/RepoAI/RepoAI_AI
+cd /home/timmy/RepoAI/RepoAI_AI/repoai-ai
 uv run uvicorn src.repoai.api.main:app --reload --port 8000
 ```
 
