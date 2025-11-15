@@ -74,7 +74,7 @@ When modifying existing classes, avoid changing public method signatures unless 
 package com.example.auth;
 
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annoation.Autowired;
 // ... other imports
 ```
 
