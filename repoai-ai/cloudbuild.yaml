@@ -8,11 +8,14 @@ substitutions:
   _GEMINI_DEFAULT_TIMEOUT_S: "60"
   _GEMINI_MAX_RETRIES: "2"
   _EMBEDDING_MODEL: "text-embedding-004"
-  _MODEL_ROUTE_ORCHESTRATOR: "gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
-  _MODEL_ROUTE_INTAKE: "gemini-2.5-flash,gemini-2.0-flash-exp,gemini-2.0-flash"
-  _MODEL_ROUTE_PLANNER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
-  _MODEL_ROUTE_CODER: "gemini-2.5-pro,gemini-2.5-flash,gemini-2.0-flash"
-  _MODEL_ROUTE_PR: "gemini-2.5-flash,gemini-2.0-flash,gemini-2.5-flash-lite"
+  # Commas in env values are problematic for `gcloud run deploy --set-env-vars`
+  # (gcloud splits on commas). We URL-encode commas as %2C here and
+  # the app should decode (%2C -> ,) when reading these env vars.
+  _MODEL_ROUTE_ORCHESTRATOR: "gemini-2.5-flash%2Cgemini-2.0-flash-exp%2Cgemini-2.0-flash"
+  _MODEL_ROUTE_INTAKE: "gemini-2.5-flash%2Cgemini-2.0-flash-exp%2Cgemini-2.0-flash"
+  _MODEL_ROUTE_PLANNER: "gemini-2.5-pro%2Cgemini-2.5-flash%2Cgemini-2.0-flash"
+  _MODEL_ROUTE_CODER: "gemini-2.5-pro%2Cgemini-2.5-flash%2Cgemini-2.0-flash"
+  _MODEL_ROUTE_PR: "gemini-2.5-flash%2Cgemini-2.0-flash%2Cgemini-2.5-flash-lite"
 
 options:
   # Use CLOUD_LOGGING_ONLY when using a custom service account to avoid
