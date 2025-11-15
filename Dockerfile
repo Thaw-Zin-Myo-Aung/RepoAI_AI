@@ -35,6 +35,8 @@ RUN chmod +x /app/entrypoint.sh
 
 # Install Python dependencies. Prefer requirements.txt if present, otherwise install from pyproject
 RUN python -m pip install --upgrade pip setuptools wheel \
+    # Install `uv` CLI so `uv run` is available at runtime (preferred runner)
+    && pip install --no-cache-dir uv || true \
     && if [ -f /app/requirements.txt ]; then \
         pip install --no-cache-dir -r /app/requirements.txt; \
     else \
