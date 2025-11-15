@@ -17,12 +17,19 @@ steps:
       - -c
       - |
         # Deploy to Cloud Run
+        # NOTE: Securely map secrets from Secret Manager into Cloud Run using
+        # `--set-secrets ENV_VAR=SECRET_NAME:version`. Create secrets in Secret Manager
+        # first and grant the Cloud Build service account access to them.
+        # Example: --set-secrets DB_PASSWORD=DB_PASSWORD:latest,API_KEY=API_KEY:latest
         gcloud run deploy $_SERVICE \
           --image=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA \
           --region=$_REGION \
           --platform=managed \
           --allow-unauthenticated \
-          --set-env-vars PORT=8000
+          # Pass non-secret configuration from .env as environment variables
+          --set-env-vars PORT=8000,GEMINI_MODEL="$GEMINI_MODEL",GEMINI_DEFAULT_TIMEOUT_S="$GEMINI_DEFAULT_TIMEOUT_S",GEMINI_MAX_RETRIES="$GEMINI_MAX_RETRIES",EMBEDDING_MODEL="$EMBEDDING_MODEL",MODEL_ROUTE_ORCHESTRATOR="$MODEL_ROUTE_ORCHESTRATOR",MODEL_ROUTE_INTAKE="$MODEL_ROUTE_INTAKE",MODEL_ROUTE_PLANNER="$MODEL_ROUTE_PLANNER",MODEL_ROUTE_CODER="$MODEL_ROUTE_CODER",MODEL_ROUTE_PR="$MODEL_ROUTE_PR" \
+          # Map sensitive values to Secret Manager entries (create these secrets first)
+          --set-secrets GOOGLE_API_KEY=GOOGLE_API_KEY:latest
 
 images:
   - "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"
