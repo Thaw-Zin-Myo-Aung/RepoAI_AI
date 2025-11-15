@@ -1,0 +1,30 @@
+substitutions:
+  _REGION: "us-central1"
+  _REPOSITORY: "repoai-images"
+  _IMAGE: "repoai"
+  _SERVICE: "repoai-service"
+
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-t", "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA", "."]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "bash"
+    args:
+      - -c
+      - |
+        # Deploy to Cloud Run
+        gcloud run deploy $_SERVICE \
+          --image=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA \
+          --region=$_REGION \
+          --platform=managed \
+          --allow-unauthenticated \
+          --set-env-vars PORT=8000
+
+images:
+  - "$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/$_IMAGE:$SHORT_SHA"
+
+timeout: "1200s"
