@@ -27,7 +27,11 @@ RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSIO
 
 # Workdir and copy entire source (simpler and robust)
 WORKDIR /app
+
+# Copy source and entrypoint
 COPY . /app
+COPY --chown=repoai:repoai entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Install Python dependencies. Prefer requirements.txt if present, otherwise install from pyproject
 RUN python -m pip install --upgrade pip setuptools wheel \
@@ -45,5 +49,5 @@ USER repoai
 ENV PORT=8000
 EXPOSE ${PORT}
 
-# Default command: run the uvicorn server used in local dev
-CMD ["uvicorn", "src.repoai.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default entrypoint: prefer `uv run` if present, otherwise run `uvicorn`
+ENTRYPOINT ["/bin/sh", "/app/entrypoint.sh"]
