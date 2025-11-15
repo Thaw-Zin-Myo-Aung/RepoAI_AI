@@ -30,17 +30,17 @@ WORKDIR /app
 
 # Copy source and entrypoint
 COPY . /app
-COPY --chown=repoai:repoai entrypoint.sh /app/entrypoint.sh
+COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Install Python dependencies. Prefer requirements.txt if present, otherwise install from pyproject
 RUN python -m pip install --upgrade pip setuptools wheel \
     # Install `uv` CLI so `uv run` is available at runtime (preferred runner)
-    && pip install --no-cache-dir uv || true \
+    && pip install --no-cache-dir uv \
     && if [ -f /app/requirements.txt ]; then \
         pip install --no-cache-dir -r /app/requirements.txt; \
     else \
-        pip install --no-cache-dir /app || true; \
+        pip install --no-cache-dir -e /app; \
     fi
 
 # Create a non-root user and give ownership of app directory
