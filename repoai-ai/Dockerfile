@@ -18,12 +18,17 @@ RUN apt-get update \
          maven \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Gradle (binary distribution) to /opt
+# Install Gradle (binary distribution) to /opt if available; fall back to apt package
 ARG GRADLE_VERSION=8.5.1
-RUN curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o /tmp/gradle.zip \
-    && unzip /tmp/gradle.zip -d /opt \
-    && rm /tmp/gradle.zip \
-    && ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle
+RUN set -eux; \
+    GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"; \
+    echo "Attempting to download Gradle from: ${GRADLE_URL}"; \
+    if curl -fsSL -o /tmp/gradle.zip "${GRADLE_URL}"; then \
+        unzip /tmp/gradle.zip -d /opt && rm /tmp/gradle.zip && ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/local/bin/gradle; \
+    else \
+        echo "Gradle distribution not found at ${GRADLE_URL}, falling back to apt package 'gradle'"; \
+        apt-get update && apt-get install -y --no-install-recommends gradle || true; \
+    fi
 
 # Workdir and copy entire source (simpler and robust)
 WORKDIR /app
