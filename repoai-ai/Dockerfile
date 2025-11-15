@@ -9,13 +9,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install OS-level build tools, Java and Maven, plus utilities
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       ca-certificates \
-       curl \
-       unzip \
-       git \
-       openjdk-17-jdk-headless \
-       maven \
+     && apt-get install -y --no-install-recommends \
+         ca-certificates \
+         curl \
+         unzip \
+         git \
+         default-jdk \
+         maven \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Gradle (binary distribution) to /opt
