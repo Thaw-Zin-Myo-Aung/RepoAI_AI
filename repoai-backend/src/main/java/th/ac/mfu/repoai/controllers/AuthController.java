@@ -96,8 +96,10 @@ public class AuthController {
             newUser.setProfileUrl(profileUrl);
             return userRepository.save(newUser);
         });
-
-        return new ResponseEntity<>(user, HttpStatus.OK);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                    .header("Location", "https://repoai-frontend-516479753863.us-central1.run.app/home")
+                    .build();
+        // return new ResponseEntity<>(user, HttpStatus.OK);
     }
 
     // Start OAuth and remember where to send the user back on success
