@@ -96,7 +96,7 @@ public class AuthController {
             newUser.setAvatarUrl(avatarUrl);
             newUser.setProfileUrl(profileUrl);
             return userRepository.save(newUser);
-        });d
+        });
 
 
         return ResponseEntity.status(HttpStatus.FOUND)
