@@ -7,11 +7,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import th.ac.mfu.repoai.repository.UserRepository;
 
 @Configuration
 @EnableWebSecurity
@@ -49,8 +51,32 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationSuccessHandler oauth2SuccessHandler() {
+    public AuthenticationSuccessHandler oauth2SuccessHandler(UserRepository userRepository) {
         return (request, response, authentication) -> {
+
+      
+            // Extract OAuth2 user info
+            OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
+            
+            // Get GitHub attributes
+            Long githubId = ((Number) oauth2User.getAttribute("id")).longValue();
+            String username = oauth2User.getAttribute("login");
+            String email = oauth2User.getAttribute("email");
+            String avatarUrl = oauth2User.getAttribute("avatar_url");
+            String profileUrl = oauth2User.getAttribute("html_url");
+            
+            // Save or update user in database
+            userRepository.findByGithubId(githubId).orElseGet(() -> {
+                User newUser = new User();
+                newUser.setGithubId(githubId);
+                newUser.setUsername(username);
+                newUser.setEmail(email);
+                newUser.setAvatarUrl(avatarUrl);
+                newUser.setProfileUrl(profileUrl);
+                return userRepository.save(newUser);
+            });
+
+
             String redirect = null;
             var cookies = request.getCookies();
             if (cookies != null) {
@@ -71,7 +97,7 @@ public class SecurityConfig {
             }
             response.sendRedirect(redirect);
         };
-    }
+        }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
