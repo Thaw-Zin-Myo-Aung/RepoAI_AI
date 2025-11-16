@@ -17,10 +17,13 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableWebSecurity
 public class SecurityConfig {
 
+    @Value("${app.frontend.url:https://repoai-frontend-516479753863.us-central1.run.app}")
+    private String frontendUrl;
+
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http,
-            AuthenticationSuccessHandler oauth2SuccessHandler) throws Exception {
+        HttpSecurity http,
+        AuthenticationSuccessHandler oauth2SuccessHandler) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -38,9 +41,7 @@ public class SecurityConfig {
                         // Redirect to SPA after successful OAuth login
                         .successHandler(oauth2SuccessHandler))
                 .logout(logout -> logout
-                        .logoutSuccessUrl("https://repoai-frontend-516479753863.us-central1.run.app/login") // where to
-                                                                                                            // go after
-                                                                                                            // logout
+            .logoutSuccessUrl(frontendUrl + "/login") // where to go after logout
                         .invalidateHttpSession(true)
                         .clearAuthentication(true));
 
@@ -66,7 +67,7 @@ public class SecurityConfig {
                 }
             }
             if (redirect == null || redirect.isBlank()) {
-                redirect = "https://repoai-frontend-516479753863.us-central1.run.app/home"; // fallback
+                redirect = frontendUrl + "/home"; // fallback
             }
             response.sendRedirect(redirect);
         };
@@ -75,8 +76,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // For local dev: allow any origin. For prod, restrict to known frontends.
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        // Allow the configured frontend origin
+        configuration.setAllowedOrigins(List.of(frontendUrl));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept"));
         configuration.setExposedHeaders(List.of("Location", "Link"));
