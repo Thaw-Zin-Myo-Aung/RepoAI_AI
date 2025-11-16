@@ -1347,34 +1347,41 @@ Focus on the ROOT CAUSE, not symptoms. If tests are broken, the root cause is us
         repo_path = Path(self.deps.repository_path)
         backup_dir = Path(self.state.backup_directory) if self.state.backup_directory else None
 
-        for fix in fixes:
-            logger.info(f"Applying fix to {fix.file_path}")
-            await apply_code_change(fix, repo_path, backup_dir)
-
-            # Send progress update
+        if not fixes:
+            # Stream fallback SSE event if no fixes
             self._send_progress(
-                f"✓ Applied fix: {fix.file_path} (+{fix.lines_added}/-{fix.lines_removed})",
-                event_type="file_modified",
-                file_path=fix.file_path,
+                "No error files found, no fix applied.",
+                event_type="fix_attempt",
             )
+        else:
+            for fix in fixes:
+                logger.info(f"Applying fix to {fix.file_path}")
+                await apply_code_change(fix, repo_path, backup_dir)
 
-            # Update code_changes state with the fix
-            if self.state.code_changes:
-                # Replace or add the fixed file in code_changes
-                existing_idx = next(
-                    (
-                        i
-                        for i, c in enumerate(self.state.code_changes.changes)
-                        if c.file_path == fix.file_path
-                    ),
-                    None,
+                # Stream file_operation SSE event for each fix
+                self._send_progress(
+                    f"✓ Applied fix: {fix.file_path} (+{fix.lines_added}/-{fix.lines_removed})",
+                    event_type="file_operation",
+                    file_path=fix.file_path,
                 )
-                if existing_idx is not None:
-                    self.state.code_changes.changes[existing_idx] = fix
-                else:
-                    self.state.code_changes.changes.append(fix)
 
-        logger.info(f"Applied {len(fixes)} fixes to repository")
+                # Update code_changes state with the fix
+                if self.state.code_changes:
+                    # Replace or add the fixed file in code_changes
+                    existing_idx = next(
+                        (
+                            i
+                            for i, c in enumerate(self.state.code_changes.changes)
+                            if c.file_path == fix.file_path
+                        ),
+                        None,
+                    )
+                    if existing_idx is not None:
+                        self.state.code_changes.changes[existing_idx] = fix
+                    else:
+                        self.state.code_changes.changes.append(fix)
+
+            logger.info(f"Applied {len(fixes)} fixes to repository")
 
     def _build_error_summary(self, validation_result: ValidationResult) -> str:
         """Build human-readable error summary from validation result."""

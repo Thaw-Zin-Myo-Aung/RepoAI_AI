@@ -643,7 +643,12 @@ async def run_java_tests(
             full_output = "".join(output_lines)
             test_stats, failures = _parse_test_output(full_output, build_tool_info.tool)
 
-            success = return_code == 0
+            tests_run = test_stats.get("run", 0)
+            # Consider a test run with zero tests as a non-success for validation purposes
+            if tests_run == 0:
+                logger.warning("No tests detected by build tool (tests_run=0)")
+
+            success = (return_code == 0) and (tests_run > 0)
 
             test_result = TestResult(
                 success=success,
@@ -675,7 +680,11 @@ async def run_java_tests(
                 result.stdout + result.stderr, build_tool_info.tool
             )
 
-            success = result.returncode == 0
+            tests_run = test_stats.get("run", 0)
+            if tests_run == 0:
+                logger.warning("No tests detected by build tool (tests_run=0)")
+
+            success = (result.returncode == 0) and (tests_run > 0)
 
             test_result = TestResult(
                 success=success,

@@ -199,14 +199,21 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
         """Generate SSE events from progress queue."""
         queue = session_queues[session_id]
         buffer = session_buffers.get(session_id, [])
-
         try:
             # First, send any buffered messages (for late connections)
             logger.info(f"SSE connected: {session_id}, buffered_messages={len(buffer)}")
             for buffered_update in buffer:
                 if buffered_update is None:
-                    # Completion signal in buffer
+                    # Completion signal in buffer -> emit explicit complete event and stop
                     logger.info(f"SSE stream completed (from buffer): {session_id}")
+                    # Emit explicit complete event so clients can act on it
+                    yield {
+                        "event": "complete",
+                        "data": f'{{"session_id":"{session_id}","success":true}}',
+                    }
+                    # clear buffer and return to close generator
+                    if session_id in session_buffers:
+                        session_buffers.pop(session_id, None)
                     return
 
                 yield {
@@ -226,6 +233,11 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
                 # Check for completion signal
                 if update is None:
                     logger.info(f"SSE stream completed: {session_id}")
+                    # emit explicit complete event so frontend can handle onmessage/oncomplete
+                    yield {
+                        "event": "complete",
+                        "data": f'{{"session_id":"{session_id}","success":true}}',
+                    }
                     break
 
                 # Send progress update
@@ -242,6 +254,16 @@ async def stream_progress(session_id: str) -> EventSourceResponse:
                 "event": "error",
                 "data": f'{{"error": "{str(e)}"}}',
             }
+        finally:
+            # Cleanup session state so reconnects don't replay completed stream
+            try:
+                session_queues.pop(session_id, None)
+                session_buffers.pop(session_id, None)
+                confirmation_queues.pop(session_id, None)
+                # Keep active_sessions intact so status endpoint still works
+                logger.info(f"SSE cleanup done for session: {session_id}")
+            except Exception:
+                logger.exception("Error during SSE cleanup")
 
     return EventSourceResponse(event_generator())
 

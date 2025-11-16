@@ -122,6 +122,67 @@ def test_build_fix_prompt():
 
 
 def test_build_fix_prompt_multiple_files():
+    def test_extract_error_files_from_test_failures():
+        """Test extracting error files from test failures (output mismatch)."""
+        from repoai.models.validation_result import (
+            ValidationCheck,
+            ValidationCheckResult,
+            ValidationResult,
+        )
+        from repoai.explainability.confidence import ConfidenceMetrics
+
+        validation_result = ValidationResult(
+            plan_id="plan_test_failures",
+            passed=False,
+            compilation_passed=True,
+            test_coverage=0.0,
+            checks=[
+                ValidationCheckResult(
+                    name="junit_tests",
+                    result=ValidationCheck(
+                        check_name="junit_tests",
+                        passed=False,
+                        issues=[],
+                        compilation_errors=[],
+                        details=type(
+                            "Details",
+                            (),
+                            {
+                                "failed_tests": [
+                                    {
+                                        "test_class": "BookServiceTest",
+                                        "test_method": "testPrintNumbers",
+                                        "error_type": "AssertionError",
+                                        "message": "expected: <1> but was: <Num: 1>",
+                                    }
+                                ]
+                            },
+                        )(),
+                    ),
+                )
+            ],
+            security_vulnerabilities=[],
+            confidence=ConfidenceMetrics(
+                overall_confidence=0.5,
+                reasoning_quality=0.5,
+                code_safety=0.5,
+                test_coverage=0.0,
+            ),
+        )
+
+        from repoai.agents.transformer_fix_agent import _extract_error_files, _build_fix_prompt
+
+        error_files = _extract_error_files(validation_result)
+        assert "src/test/java/BookServiceTest.java" in error_files
+
+        file_contents = {
+            "src/test/java/BookServiceTest.java": "public class BookServiceTest { /* ... */ }"
+        }
+        fix_instructions = "Fix output mismatch in testPrintNumbers"
+        prompt = _build_fix_prompt(validation_result, fix_instructions, file_contents)
+        assert "testPrintNumbers" in prompt
+        assert "expected: <1> but was: <Num: 1>" in prompt
+
     """Test building fix prompt with multiple files."""
     validation_result = ValidationResult(
         plan_id="test_plan_multi_files",

@@ -2201,6 +2201,7 @@ name = "repoai"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "black" },
     { name = "display" },
     { name = "fastapi" },
     { name = "ipython" },
@@ -2226,6 +2227,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "black", specifier = ">=24.10.0" },
     { name = "display", specifier = ">=1.0.0" },
     { name = "fastapi", specifier = ">=0.121.0" },
     { name = "ipython", specifier = ">=9.6.0" },

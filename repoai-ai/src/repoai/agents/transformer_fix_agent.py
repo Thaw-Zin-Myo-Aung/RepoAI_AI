@@ -129,6 +129,7 @@ async def generate_fixes_for_errors(
 def _extract_error_files(validation_result: ValidationResult) -> set[str]:
     error_files = set()
     for check in validation_result.checks:
+        # Compilation errors
         if check.result.compilation_errors:
             for error_str in check.result.compilation_errors:
                 parts = error_str.split(":")
@@ -138,6 +139,17 @@ def _extract_error_files(validation_result: ValidationResult) -> set[str]:
                         src_index = file_part.find("src/")
                         if src_index >= 0:
                             error_files.add(file_part[src_index:])
+        # Test failures (output mismatch, assertion errors)
+        if hasattr(check.result, "details") and check.result.details:
+            failed_tests = getattr(check.result.details, "failed_tests", None)
+            if failed_tests:
+                for test in failed_tests:
+                    test_class = test.get("test_class")
+                    # Map test class to file path (Java convention)
+                    if test_class:
+                        # Try src/test/java/{test_class}.java
+                        test_file = f"src/test/java/{test_class}.java"
+                        error_files.add(test_file)
     return error_files
 
 
@@ -147,7 +159,7 @@ def _build_fix_prompt(
     file_contents: dict[str, str],
 ) -> str:
     parts = [
-        "You are fixing compilation errors in a Java project.",
+        "You are fixing compilation and test errors in a Java project.",
         "\n**FIX INSTRUCTIONS FROM ANALYSIS:**\n",
         fix_instructions,
         "\n**COMPILATION ERRORS:**\n",
@@ -155,6 +167,18 @@ def _build_fix_prompt(
     for check in validation_result.checks:
         if check.result.compilation_errors:
             parts.append("\n".join(check.result.compilation_errors[:10]))
+    # Add test failure context
+    parts.append("\n**TEST FAILURES (output mismatches, assertion errors):**\n")
+    for check in validation_result.checks:
+        if hasattr(check.result, "details") and check.result.details:
+            failed_tests = getattr(check.result.details, "failed_tests", None)
+            if failed_tests:
+                for test in failed_tests:
+                    test_class = test.get("test_class", "")
+                    test_method = test.get("test_method", "")
+                    error_type = test.get("error_type", "")
+                    message = test.get("message", "")
+                    parts.append(f"- {test_class}.{test_method}: {error_type} - {message}")
     parts.append("\n\n**CURRENT FILE CONTENTS (excerpted when large):**\n")
     for fp, content in file_contents.items():
         parts.append(f"\n### {fp}\n```java\n{content}\n```\n")
@@ -162,7 +186,7 @@ def _build_fix_prompt(
         "\n**TASK:**\nFor each file above: identify the root cause, provide corrected file content, and include a unified diff.\n"
     )
     parts.append(
-        "\nSpecial rules: prefer updating call sites/tests when signatures changed; avoid unrelated refactors.\n"
+        "\nSpecial rules: prefer updating call sites/tests when signatures changed; fix output mismatches in test methods; avoid unrelated refactors.\n"
     )
     parts.append("\nReturn a JSON CodeChanges structure containing only fixed files.\n")
     return "\n".join(parts)
