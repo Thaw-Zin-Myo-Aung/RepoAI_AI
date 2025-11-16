@@ -1,5 +1,6 @@
 package th.ac.mfu.repoai.controllers;
 
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -65,27 +66,31 @@ public class AuthController {
     }
 
     @GetMapping("/login")
-    public ResponseEntity<User> login(Authentication principal) {
+    public void login(Authentication principal, HttpServletResponse response) throws IOException {
         if (principal == null) {
             // If not authenticated yet, start the OAuth2 flow
-            return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", "/oauth2/authorization/github")
-                    .build();
+            response.sendRedirect("/oauth2/authorization/github");
+            return;
         }
+
         // Get user info from GitHub (includes email handling)
         ResponseEntity<OAuth2AccessToken> tokenResp = gitServices.loadGitHubToken(principal);
         if (!tokenResp.getStatusCode().is2xxSuccessful() || tokenResp.getBody() == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/login?error=unauthorized");
+            return;
         }
+
         ResponseEntity<Map<String, Object>> userInfoResponse = gitServices.getUserInfo();
-      
+
         if (!userInfoResponse.getStatusCode().is2xxSuccessful() || userInfoResponse.getBody() == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/login?error=unauthorized");
+            return;
         }
-     
+
         Map<String, Object> attributes = userInfoResponse.getBody();
         if (attributes == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/login?error=unauthorized");
+            return;
         }
 
         Long githubId = ((Number) attributes.get("id")).longValue();
@@ -104,7 +109,9 @@ public class AuthController {
             return userRepository.save(newUser);
         });
 
-        return new ResponseEntity<>(user, HttpStatus.OK);
+        // Save user and redirect to frontend home
+        System.out.println("User logged in: " + user.getUsername());
+        response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/home");
     }
 
     // Start OAuth and remember where to send the user back on success
@@ -116,7 +123,7 @@ public class AuthController {
         boolean isHttps = isSecureRequest(request);
 
         ResponseCookie cookie = ResponseCookie.from("app_redirect",
-                        URLEncoder.encode(target, StandardCharsets.UTF_8))
+                URLEncoder.encode(target, StandardCharsets.UTF_8))
                 .httpOnly(true)
                 .secure(isHttps) // Use helper method
                 .sameSite("None") // Changed to None for cross-site
@@ -148,7 +155,8 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws ServletException {
+    public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response,
+            Authentication authentication) throws ServletException {
         // Invalidate Spring Security session and clear authentication
         new SecurityContextLogoutHandler().logout(request, response, authentication);
 
