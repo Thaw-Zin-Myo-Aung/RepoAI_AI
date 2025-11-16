@@ -29,16 +29,14 @@ steps:
     entrypoint: npm
     args: ['run', 'build']
 
-  # Optional 4) Build container image and deploy to Cloud Run
-  # Builds the Dockerfile located in repoai-frontend/, pushes to Container Registry,
-  # then deploys to Cloud Run. Set `_CLOUD_RUN_SERVICE` and `_CLOUD_RUN_REGION` as substitutions.
+  # 4) Build container image and deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'repoai-frontend'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE:-repoai-frontend}:$SHORT_SHA', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE}:$SHORT_SHA', '.']
 
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'repoai-frontend'
-    args: ['push', 'gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE:-repoai-frontend}:$SHORT_SHA']
+    args: ['push', 'gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE}:$SHORT_SHA']
 
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
@@ -46,28 +44,25 @@ steps:
       - '-c'
       - |
         set -euo pipefail
-        SERVICE=${_CLOUD_RUN_SERVICE:-repoai-frontend}
-        REGION=${_CLOUD_RUN_REGION:-us-central1}
-        echo "Deploying image to Cloud Run: gcr.io/$PROJECT_ID/${SERVICE}:$SHORT_SHA"
-        gcloud run deploy "$SERVICE" \
-          --image "gcr.io/$PROJECT_ID/${SERVICE}:$SHORT_SHA" \
-          --region "$REGION" \
+        echo "Deploying image to Cloud Run: gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE}:$SHORT_SHA"
+        gcloud run deploy "${_CLOUD_RUN_SERVICE}" \
+          --image "gcr.io/$PROJECT_ID/${_CLOUD_RUN_SERVICE}:$SHORT_SHA" \
+          --region "${_CLOUD_RUN_REGION}" \
           --platform managed \
           --allow-unauthenticated
 
-  # 4) Deploy to GCS via rsync
+  # 5) Deploy to GCS via rsync
   - name: 'gcr.io/cloud-builders/gsutil'
     dir: 'repoai-frontend'
     args: ['-m', 'rsync', '-r', '-c', '-d', './dist', 'gs://${_BUCKET_NAME}']
 
-  # 5) Set cache headers for browser performance
+  # 6) Set cache headers for browser performance
   - name: 'gcr.io/cloud-builders/gsutil'
     args: ['setmeta', '-h', 'Cache-Control:public,max-age=3600', '-r', 'gs://${_BUCKET_NAME}']
 
 substitutions:
   _BUCKET_NAME: "repo-ai"        # ← replace with your bucket name if needed
   _BUCKET_LOCATION: "us-central1" # region for bucket creation
-  # Cloud Run deployment substitutions
   _CLOUD_RUN_SERVICE: "repoai-frontend"
   _CLOUD_RUN_REGION: "us-central1"
 
