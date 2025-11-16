@@ -1,11 +1,14 @@
 steps:
   # Install dependencies
   - name: 'node:20'
+    # run in frontend subdirectory so package-lock.json is present
+    dir: 'repoai-frontend'
     entrypoint: npm
     args: ['ci']
   
   # Build the React app
   - name: 'node:20'
+    dir: 'repoai-frontend'
     entrypoint: npm
     args: ['run', 'build']
   
@@ -13,10 +16,12 @@ steps:
   
   # Option 1: Deploy to Cloud Storage (static hosting)
   - name: 'gcr.io/cloud-builders/gsutil'
+    dir: 'repoai-frontend'
     args: ['-m', 'rsync', '-r', '-c', '-d', './dist', 'gs://${_BUCKET_NAME}']
   
   # Set proper cache headers
   - name: 'gcr.io/cloud-builders/gsutil'
+    dir: 'repoai-frontend'
     args: ['setmeta', '-h', 'Cache-Control:public,max-age=3600', '-r', 'gs://${_BUCKET_NAME}']
 
 # Substitutions for bucket name
