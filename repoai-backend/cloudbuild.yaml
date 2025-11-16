@@ -1,6 +1,6 @@
 substitutions:
   _REGION: us-central1
-  _SERVICE: repo-ai-backend
+  _SERVICE: repoai-backend
   _REPO: repo-ai-backend
   _DB_NAME: repoai
   _CLOUDSQL: softwarecontinuous6731503060:us-central1:repoai
