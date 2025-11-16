@@ -41,6 +41,13 @@ public class AuthController {
     @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
+    // Helper method to detect if we're on HTTPS
+    private boolean isSecureRequest(HttpServletRequest request) {
+        // Check if running on Cloud Run or other HTTPS environment
+        String proto = request.getHeader("X-Forwarded-Proto");
+        return "https".equalsIgnoreCase(proto) || request.isSecure();
+    }
+
     @GetMapping("/token")
     @ResponseBody
     public ResponseEntity<String> token(Authentication principal) {
@@ -106,14 +113,13 @@ public class AuthController {
             @org.springframework.web.bind.annotation.RequestParam(required = false) String redirect,
             HttpServletRequest request) {
         String target = (redirect == null || redirect.isBlank()) ? frontendUrl : redirect;
-        boolean isHttps = request.isSecure()
-                || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+        boolean isHttps = isSecureRequest(request);
 
         ResponseCookie cookie = ResponseCookie.from("app_redirect",
                         URLEncoder.encode(target, StandardCharsets.UTF_8))
                 .httpOnly(true)
-                .secure(isHttps) // true on HTTPS (e.g., Cloud Run), false on local HTTP
-                .sameSite("Lax")
+                .secure(isHttps) // Use helper method
+                .sameSite("None") // Changed to None for cross-site
                 .path("/")
                 .maxAge(Duration.ofMinutes(5))
                 .build();
@@ -146,22 +152,21 @@ public class AuthController {
         // Invalidate Spring Security session and clear authentication
         new SecurityContextLogoutHandler().logout(request, response, authentication);
 
-    boolean isHttps = request.isSecure()
-        || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+        boolean isHttps = isSecureRequest(request);
 
         // Proactively expire cookies that may exist in browser
         ResponseCookie clearSession = ResponseCookie.from("JSESSIONID", "")
                 .httpOnly(true)
-        .secure(isHttps)
-                .sameSite("Lax")
+                .secure(isHttps)
+                .sameSite("None") // Changed to None for cross-site
                 .path("/")
                 .maxAge(0)
                 .build();
 
         ResponseCookie clearRedirect = ResponseCookie.from("app_redirect", "")
                 .httpOnly(true)
-        .secure(isHttps)
-                .sameSite("Lax")
+                .secure(isHttps)
+                .sameSite("None") // Changed to None for cross-site
                 .path("/")
                 .maxAge(0)
                 .build();
