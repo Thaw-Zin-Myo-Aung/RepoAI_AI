@@ -1,6 +1,5 @@
 package th.ac.mfu.repoai.controllers;
 
-import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -42,13 +41,6 @@ public class AuthController {
     @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
-    // Helper method to detect if we're on HTTPS
-    private boolean isSecureRequest(HttpServletRequest request) {
-        // Check if running on Cloud Run or other HTTPS environment
-        String proto = request.getHeader("X-Forwarded-Proto");
-        return "https".equalsIgnoreCase(proto) || request.isSecure();
-    }
-
     @GetMapping("/token")
     @ResponseBody
     public ResponseEntity<String> token(Authentication principal) {
@@ -66,31 +58,27 @@ public class AuthController {
     }
 
     @GetMapping("/login")
-    public void login(Authentication principal, HttpServletResponse response) throws IOException {
+    public ResponseEntity<User> login(Authentication principal) {
         if (principal == null) {
             // If not authenticated yet, start the OAuth2 flow
-            response.sendRedirect("/oauth2/authorization/github");
-            return;
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header("Location", "/oauth2/authorization/github")
+                    .build();
         }
-
         // Get user info from GitHub (includes email handling)
         ResponseEntity<OAuth2AccessToken> tokenResp = gitServices.loadGitHubToken(principal);
         if (!tokenResp.getStatusCode().is2xxSuccessful() || tokenResp.getBody() == null) {
-            response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/login?error=unauthorized");
-            return;
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-
         ResponseEntity<Map<String, Object>> userInfoResponse = gitServices.getUserInfo();
-
+      
         if (!userInfoResponse.getStatusCode().is2xxSuccessful() || userInfoResponse.getBody() == null) {
-            response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/login?error=unauthorized");
-            return;
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-
+     
         Map<String, Object> attributes = userInfoResponse.getBody();
         if (attributes == null) {
-            response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/login?error=unauthorized");
-            return;
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         Long githubId = ((Number) attributes.get("id")).longValue();
@@ -109,9 +97,7 @@ public class AuthController {
             return userRepository.save(newUser);
         });
 
-        // Save user and redirect to frontend home
-        System.out.println("User logged in: " + user.getUsername());
-        response.sendRedirect("https://repoai-frontend-516479753863.us-central1.run.app/home");
+        return new ResponseEntity<>(user, HttpStatus.OK);
     }
 
     // Start OAuth and remember where to send the user back on success
@@ -120,13 +106,14 @@ public class AuthController {
             @org.springframework.web.bind.annotation.RequestParam(required = false) String redirect,
             HttpServletRequest request) {
         String target = (redirect == null || redirect.isBlank()) ? frontendUrl : redirect;
-        boolean isHttps = isSecureRequest(request);
+        boolean isHttps = request.isSecure()
+                || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
 
         ResponseCookie cookie = ResponseCookie.from("app_redirect",
-                URLEncoder.encode(target, StandardCharsets.UTF_8))
+                        URLEncoder.encode(target, StandardCharsets.UTF_8))
                 .httpOnly(true)
-                .secure(isHttps) // Use helper method
-                .sameSite("None") // Changed to None for cross-site
+                .secure(isHttps) // true on HTTPS (e.g., Cloud Run), false on local HTTP
+                .sameSite("Lax")
                 .path("/")
                 .maxAge(Duration.ofMinutes(5))
                 .build();
@@ -155,26 +142,26 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response,
-            Authentication authentication) throws ServletException {
+    public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws ServletException {
         // Invalidate Spring Security session and clear authentication
         new SecurityContextLogoutHandler().logout(request, response, authentication);
 
-        boolean isHttps = isSecureRequest(request);
+    boolean isHttps = request.isSecure()
+        || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
 
         // Proactively expire cookies that may exist in browser
         ResponseCookie clearSession = ResponseCookie.from("JSESSIONID", "")
                 .httpOnly(true)
-                .secure(isHttps)
-                .sameSite("None") // Changed to None for cross-site
+        .secure(isHttps)
+                .sameSite("Lax")
                 .path("/")
                 .maxAge(0)
                 .build();
 
         ResponseCookie clearRedirect = ResponseCookie.from("app_redirect", "")
                 .httpOnly(true)
-                .secure(isHttps)
-                .sameSite("None") // Changed to None for cross-site
+        .secure(isHttps)
+                .sameSite("Lax")
                 .path("/")
                 .maxAge(0)
                 .build();
