@@ -1,3 +1,9 @@
+# NOTE: Cloud Build validates substitutions at parse time. Custom substitutions
+# must start with an underscore (e.g. `_MY_VAR`). Do NOT supply a substitution
+# named `PROJECT` (invalid) — use `_PROJECT_ID` instead or rely on the built-in
+# `PROJECT_ID` value. If your trigger contains an invalid key, the build will
+# fail before any steps run.
+
 steps:
   # Optional: ensure target GCS bucket exists (replace substitutions below)
   - name: 'gcr.io/cloud-builders/gsutil'
@@ -24,7 +30,7 @@ steps:
             echo "Created gs://${_BUCKET_NAME} in project $PROJECT, location $LOCATION"
         else
           echo "Bucket gs://${_BUCKET_NAME} already exists"
-        fi
+        fican
 
   # Install dependencies
   - name: 'node:20'
@@ -57,8 +63,11 @@ substitutions:
   # _BUCKET_NAME: required - set to your globally-unique bucket name (e.g. repo-ai-yourorg-123)
   # _PROJECT_ID: optional - GCP project id where bucket should be created (defaults to build project)
   # _BUCKET_LOCATION: optional - location for new bucket (defaults to us-central1)
-  _BUCKET_NAME: 'repo-ai-frontend'
-  _PROJECT_ID: 'thuraproj'
+  _BUCKET_NAME: 'repo-ai'
+  # Leave empty to use the build project's built-in PROJECT_ID by default.
+  # If you want the bucket created in a different project, set this in the Cloud Build trigger
+  # or pass it with --substitutions when invoking gcloud.
+  _PROJECT_ID: ''
   _BUCKET_LOCATION: 'us-central1'
 
 options:
