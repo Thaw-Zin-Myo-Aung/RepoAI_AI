@@ -1,0 +1,4 @@
+.chat-layout { display: grid; grid-template-columns: 280px 1fr 320px; gap: 16px; }
+.chat-list { min-height: 500px; }
+.chat-window { min-height: 500px; }
+.chat-inspect { min-height: 500px; }

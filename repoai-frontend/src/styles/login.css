@@ -1,0 +1,4 @@
+.login-page { display: flex; align-items: center; justify-content: center; height: calc(100vh - 56px); }
+.logo-placeholder { width: 72px; height: 72px; border-radius: 12px; margin: 0 auto 12px; }
+.form-row { margin-bottom: 12px; }
+.input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #e6e9ee; }

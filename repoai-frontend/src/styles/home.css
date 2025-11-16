@@ -1,0 +1,4 @@
+.layout-grid { display: grid; grid-template-columns: 220px 1fr 320px; gap: 16px; align-items: start; }
+.sidebar { min-height: 300px; }
+.content { min-height: 300px; }
+.panel { min-height: 300px; }
