@@ -1,14 +1,8 @@
-# NOTE: Cloud Build validates substitutions at parse time. Custom substitutions
-# must start with an underscore (e.g. `_MY_VAR`). Do NOT supply a substitution
-# named `PROJECT` (invalid) — use `_PROJECT_ID` instead or rely on the built-in
-# `PROJECT_ID` value. If your trigger contains an invalid key, the build will
-# fail before any steps run.
+# Clean Cloud Build config for building a React/Vite project and deploying to GCS
 
 steps:
-  # Optional: ensure target GCS bucket exists (replace substitutions below)
+  # 1) Ensure bucket exists
   - name: 'gcr.io/cloud-builders/gsutil'
-    # run the check/create in the repo dir context (no effect on gsutil invocation)
-    dir: 'repoai-frontend'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -17,58 +11,36 @@ steps:
         echo "Checking for bucket: gs://${_BUCKET_NAME}"
         if ! gsutil ls -b "gs://${_BUCKET_NAME}" >/dev/null 2>&1; then
           echo "Bucket gs://${_BUCKET_NAME} not found. Creating..."
-            # Use provided project substitution or fall back to environment
-            PROJECT="$PROJECT_ID"
-            if [ -n "${_PROJECT_ID:-}" ]; then
-              PROJECT="${_PROJECT_ID}"
-            fi
-            LOCATION="us-central1"
-            if [ -n "${_BUCKET_LOCATION:-}" ]; then
-              LOCATION="${_BUCKET_LOCATION}"
-            fi
-            gsutil mb -p "$PROJECT" -l "$LOCATION" "gs://${_BUCKET_NAME}"
-            echo "Created gs://${_BUCKET_NAME} in project $PROJECT, location $LOCATION"
+          gsutil mb -p "$PROJECT_ID" -l "${_BUCKET_LOCATION}" "gs://${_BUCKET_NAME}"
+          echo "Created bucket gs://${_BUCKET_NAME}"
         else
-          echo "Bucket gs://${_BUCKET_NAME} already exists"
-        fican
+          echo "Bucket exists: gs://${_BUCKET_NAME}"
+        fi
 
-  # Install dependencies
+  # 2) Install dependencies
   - name: 'node:20'
-    # run in frontend subdirectory so package-lock.json is present
     dir: 'repoai-frontend'
     entrypoint: npm
-    args: ['ci']
-  
-  # Build the React app
+    args: ['install']
+
+  # 3) Build the React app
   - name: 'node:20'
     dir: 'repoai-frontend'
     entrypoint: npm
     args: ['run', 'build']
-  
-  # Deploy to Cloud Storage or Cloud Run (choose one)
-  
-  # Option 1: Deploy to Cloud Storage (static hosting)
+
+  # 4) Deploy to GCS via rsync
   - name: 'gcr.io/cloud-builders/gsutil'
     dir: 'repoai-frontend'
     args: ['-m', 'rsync', '-r', '-c', '-d', './dist', 'gs://${_BUCKET_NAME}']
-  
-  # Set proper cache headers
+
+  # 5) Set cache headers for browser performance
   - name: 'gcr.io/cloud-builders/gsutil'
-    dir: 'repoai-frontend'
     args: ['setmeta', '-h', 'Cache-Control:public,max-age=3600', '-r', 'gs://${_BUCKET_NAME}']
 
-# Substitutions for bucket name
 substitutions:
-  # Replace these placeholders in your Cloud Build trigger or via gcloud substitutions
-  # _BUCKET_NAME: required - set to your globally-unique bucket name (e.g. repo-ai-yourorg-123)
-  # _PROJECT_ID: optional - GCP project id where bucket should be created (defaults to build project)
-  # _BUCKET_LOCATION: optional - location for new bucket (defaults to us-central1)
-  _BUCKET_NAME: 'repo-ai'
-  # Leave empty to use the build project's built-in PROJECT_ID by default.
-  # If you want the bucket created in a different project, set this in the Cloud Build trigger
-  # or pass it with --substitutions when invoking gcloud.
-  _PROJECT_ID: ''
-  _BUCKET_LOCATION: 'us-central1'
+  _BUCKET_NAME: "repo-ai"        # ← replace with your bucket name if needed
+  _BUCKET_LOCATION: "us-central1" # region for bucket creation
 
 options:
   logging: CLOUD_LOGGING_ONLY
