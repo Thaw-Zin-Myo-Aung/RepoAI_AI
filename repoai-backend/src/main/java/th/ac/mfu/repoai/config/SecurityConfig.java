@@ -20,7 +20,6 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            @Value("${app.frontend.url:http://localhost:5173}") String frontendUrl,
             AuthenticationSuccessHandler oauth2SuccessHandler) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -39,7 +38,9 @@ public class SecurityConfig {
                         // Redirect to SPA after successful OAuth login
                         .successHandler(oauth2SuccessHandler))
                 .logout(logout -> logout
-                        .logoutSuccessUrl(frontendUrl + "/login") // where to go after logout
+                        .logoutSuccessUrl("https://repoai-frontend-516479753863.us-central1.run.app/login") // where to
+                                                                                                            // go after
+                                                                                                            // logout
                         .invalidateHttpSession(true)
                         .clearAuthentication(true));
 
@@ -47,8 +48,7 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationSuccessHandler oauth2SuccessHandler(
-            @Value("${app.frontend.url:http://localhost:5173}") String frontendUrl) {
+    public AuthenticationSuccessHandler oauth2SuccessHandler() {
         return (request, response, authentication) -> {
             String redirect = null;
             var cookies = request.getCookies();
@@ -66,7 +66,7 @@ public class SecurityConfig {
                 }
             }
             if (redirect == null || redirect.isBlank()) {
-                redirect = frontendUrl + "/home"; // fallback
+                redirect = "https://repoai-frontend-516479753863.us-central1.run.app/home"; // fallback
             }
             response.sendRedirect(redirect);
         };
