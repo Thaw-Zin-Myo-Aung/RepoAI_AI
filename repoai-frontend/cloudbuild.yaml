@@ -11,11 +11,17 @@ steps:
         echo "Checking for bucket: gs://${_BUCKET_NAME}"
         if ! gsutil ls -b "gs://${_BUCKET_NAME}" >/dev/null 2>&1; then
           echo "Bucket gs://${_BUCKET_NAME} not found. Creating..."
-          # Use provided project substitution or fall back to environment
-          PROJECT=${_PROJECT_ID:-$PROJECT_ID}
-          LOCATION=${_BUCKET_LOCATION:-us-central1}
-          gsutil mb -p "${PROJECT}" -l "${LOCATION}" "gs://${_BUCKET_NAME}"
-          echo "Created gs://${_BUCKET_NAME} in project ${PROJECT}, location ${LOCATION}"
+            # Use provided project substitution or fall back to environment
+            PROJECT="$PROJECT_ID"
+            if [ -n "${_PROJECT_ID:-}" ]; then
+              PROJECT="${_PROJECT_ID}"
+            fi
+            LOCATION="us-central1"
+            if [ -n "${_BUCKET_LOCATION:-}" ]; then
+              LOCATION="${_BUCKET_LOCATION}"
+            fi
+            gsutil mb -p "$PROJECT" -l "$LOCATION" "gs://${_BUCKET_NAME}"
+            echo "Created gs://${_BUCKET_NAME} in project $PROJECT, location $LOCATION"
         else
           echo "Bucket gs://${_BUCKET_NAME} already exists"
         fi
