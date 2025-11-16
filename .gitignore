@@ -2,5 +2,4 @@ repoai-frontend/node_modules/
 repoai-frontend/dist/
 repoai-frontend/.vite/
 repoai-backend/target/
-repoai-backend/.mvn/
 repoai-backend/*.log
