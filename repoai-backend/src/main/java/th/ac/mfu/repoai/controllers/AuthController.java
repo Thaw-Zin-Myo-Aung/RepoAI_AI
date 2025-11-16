@@ -65,7 +65,40 @@ public class AuthController {
                     .header("Location", "/oauth2/authorization/github")
                     .build();
         }
+
+          ResponseEntity<OAuth2AccessToken> tokenResp = gitServices.loadGitHubToken(principal);
+        if (!tokenResp.getStatusCode().is2xxSuccessful() || tokenResp.getBody() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        ResponseEntity<Map<String, Object>> userInfoResponse = gitServices.getUserInfo();
+      
+        if (!userInfoResponse.getStatusCode().is2xxSuccessful() || userInfoResponse.getBody() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+     
+        Map<String, Object> attributes = userInfoResponse.getBody();
+        if (attributes == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         // Already authenticated -> send user to frontend
+                Long githubId = ((Number) attributes.get("id")).longValue();
+        String username = (String) attributes.get("login");
+        String email = (String) attributes.get("email");
+        String avatarUrl = (String) attributes.get("avatar_url");
+        String profileUrl = (String) attributes.get("html_url");
+
+
+        User user = userRepository.findByGithubId(githubId).orElseGet(() -> {
+            User newUser = new User();
+            newUser.setGithubId(githubId);
+            newUser.setUsername(username);
+            newUser.setEmail(email);
+            newUser.setAvatarUrl(avatarUrl);
+            newUser.setProfileUrl(profileUrl);
+            return userRepository.save(newUser);
+        });d
+
+
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header("Location", frontendUrl + "/home")
                 .build();
