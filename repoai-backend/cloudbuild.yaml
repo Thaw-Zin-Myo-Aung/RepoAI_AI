@@ -21,7 +21,16 @@ steps:
           secretmanager.googleapis.com \
           sqladmin.googleapis.com
 
+  # Ensure Docker can push to Artifact Registry
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - gcloud auth configure-docker $_REGION-docker.pkg.dev -q
+
+  # Build image from the backend folder (Dockerfile and context are here)
   - name: gcr.io/cloud-builders/docker
+    dir: repoai-backend
     args:
       - build
       - -t
