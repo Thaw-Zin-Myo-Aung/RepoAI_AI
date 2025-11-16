@@ -3,6 +3,9 @@ package th.ac.mfu.repoai.domain;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+
 @Entity
 @Table(name = "chat_message", indexes = {
     @Index(name = "idx_chat_convo_created", columnList = "conversation_id, created_at")
@@ -15,6 +18,7 @@ public class Chat {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "conversation_id", nullable = false, foreignKey = @ForeignKey(name = "fk_chat_conversation"))
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Conversation conversation;
 
     @Lob
