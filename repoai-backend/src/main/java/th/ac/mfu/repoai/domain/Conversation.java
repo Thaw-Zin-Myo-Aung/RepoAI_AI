@@ -3,6 +3,9 @@ package th.ac.mfu.repoai.domain;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+
 @Entity
 @Table(name = "conversation", indexes = {
         @Index(name = "idx_convo_user_updated", columnList = "user_id, updated_at"),
@@ -21,7 +24,8 @@ public class Conversation {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "repo_id", nullable = false, referencedColumnName = "repoId", foreignKey = @ForeignKey(name = "fk_convo_repo"))
+    @JoinColumn(name = "repo_id", nullable = false, foreignKey = @ForeignKey(name = "fk_convo_repo"))
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Repository repository;
 
     @ManyToOne(fetch = FetchType.LAZY)
