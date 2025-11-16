@@ -124,12 +124,12 @@ def test_build_fix_prompt():
 def test_build_fix_prompt_multiple_files():
     def test_extract_error_files_from_test_failures():
         """Test extracting error files from test failures (output mismatch)."""
+        from repoai.explainability.confidence import ConfidenceMetrics
         from repoai.models.validation_result import (
             ValidationCheck,
             ValidationCheckResult,
             ValidationResult,
         )
-        from repoai.explainability.confidence import ConfidenceMetrics
 
         validation_result = ValidationResult(
             plan_id="plan_test_failures",
@@ -170,7 +170,7 @@ def test_build_fix_prompt_multiple_files():
             ),
         )
 
-        from repoai.agents.transformer_fix_agent import _extract_error_files, _build_fix_prompt
+        from repoai.agents.transformer_fix_agent import _build_fix_prompt, _extract_error_files
 
         error_files = _extract_error_files(validation_result)
         assert "src/test/java/BookServiceTest.java" in error_files
