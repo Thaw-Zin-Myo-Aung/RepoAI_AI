@@ -1,7 +1,7 @@
 # Multi-stage build for Vite React app served on Cloud Run
 
 # 1) Build stage: install deps and build static assets
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 WORKDIR /app
 
 # Install dependencies (use npm ci for reproducible installs)
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build
 
 # 2) Runtime stage: serve static files with `serve`
-FROM node:18-alpine AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 # Install a lightweight static server with SPA support
