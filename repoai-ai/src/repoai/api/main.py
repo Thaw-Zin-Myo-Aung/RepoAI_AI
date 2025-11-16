@@ -73,7 +73,7 @@ if origins_env:
     allow_credentials = True
 else:
     # Default to local frontend which requires cookies
-    allow_origins = ["http://localhost:5173"]
+    allow_origins = ["http://localhost:5173", "https://repoai-frontend-516479753863.us-central1.run.app"]
     allow_credentials = True
 
 app.add_middleware(

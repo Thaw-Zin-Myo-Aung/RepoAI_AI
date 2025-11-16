@@ -53,7 +53,7 @@ steps:
           --platform=managed \
           --allow-unauthenticated \
           --add-cloudsql-instances=$_CLOUDSQL \
-          --set-env-vars="APP_FRONTEND_URL=https://your-frontend-url,DB_URL=jdbc:mysql:///$_DB_NAME?socketFactory=com.google.cloud.sql.mysql.SocketFactory&cloudSqlInstance=$_CLOUDSQL&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC,DB_USERNAME=repoai" \
+          --set-env-vars="APP_FRONTEND_URL=https://repoai-frontend-516479753863.us-central1.run.app,DB_URL=jdbc:mysql:///$_DB_NAME?socketFactory=com.google.cloud.sql.mysql.SocketFactory&cloudSqlInstance=$_CLOUDSQL&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC,DB_USERNAME=repoai" \
           --set-secrets="DB_PASSWORD=DB_PASSWORD:latest,GITHUB_CLIENT_ID=GITHUB_CLIENT_ID:latest,GITHUB_CLIENT_SECRET=GITHUB_CLIENT_SECRET:latest"
 
 images:
