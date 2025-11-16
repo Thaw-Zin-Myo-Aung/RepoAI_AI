@@ -1,41 +1,49 @@
+# Clean Cloud Build config for building a React/Vite project and deploying to GCS
+
 steps:
-  # 1) Build Docker image from your Dockerfile
-  - name: 'gcr.io/cloud-builders/docker'
+  # 1) Ensure bucket exists
+  - name: 'gcr.io/cloud-builders/gsutil'
+    entrypoint: 'bash'
     args:
-      [
-        'build',
-        '-t',
-        '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/$_SERVICE_NAME:latest',
-        '.'
-      ]
+      - '-c'
+      - |
+        set -euo pipefail
+        echo "Checking for bucket: gs://${_BUCKET_NAME}"
+        if ! gsutil ls -b "gs://${_BUCKET_NAME}" >/dev/null 2>&1; then
+          echo "Bucket gs://${_BUCKET_NAME} not found. Creating..."
+          gsutil mb -p "$PROJECT_ID" -l "${_BUCKET_LOCATION}" "gs://${_BUCKET_NAME}"
+          echo "Created bucket gs://${_BUCKET_NAME}"
+        else
+          echo "Bucket exists: gs://${_BUCKET_NAME}"
+        fi
 
-  # 2) Push Docker image to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      [
-        'push',
-        '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/$_SERVICE_NAME:latest'
-      ]
+  # 2) Install dependencies
+  - name: 'node:20'
+    dir: 'repoai-frontend'
+    entrypoint: npm
+    args: ['install']
 
-  # 3) Deploy to Cloud Run
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
-    entrypoint: gcloud
-    args:
-      [
-        "run",
-        "deploy",
-        "$_SERVICE_NAME",
-        "--image=$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/$_SERVICE_NAME:latest",
-        "--region=$_REGION",
-        "--platform=managed",
-        "--allow-unauthenticated",
-        "--port=8080"
-      ]
+  # 3) Build the React app
+  - name: 'node:20'
+    dir: 'repoai-frontend'
+    entrypoint: npm
+    args: ['run', 'build']
+
+  # 4) Deploy to GCS via rsync
+  - name: 'gcr.io/cloud-builders/gsutil'
+    dir: 'repoai-frontend'
+    args: ['-m', 'rsync', '-r', '-c', '-d', './dist', 'gs://${_BUCKET_NAME}']
+
+  # 5) Set cache headers for browser performance
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args: ['setmeta', '-h', 'Cache-Control:public,max-age=3600', '-r', 'gs://${_BUCKET_NAME}']
 
 substitutions:
-  _REGION: "us-central1"
-  _REPO_NAME: "repo-ai"
-  _SERVICE_NAME: "repo-ai-frontend"
+  _BUCKET_NAME: "repo-ai"        # ← replace with your bucket name if needed
+  _BUCKET_LOCATION: "us-central1" # region for bucket creation
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '1200s'
