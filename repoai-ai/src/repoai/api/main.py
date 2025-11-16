@@ -64,7 +64,7 @@ app = FastAPI(
 
 # CORS middleware for Java backend
 # Configure allowed origins via `CORS_ALLOWED_ORIGINS` env var.
-# Frontend at http://localhost:5173 uses cookies, so default to that origin
+# Frontend at https://repoai-frontend-516479753863.us-central1.run.app uses cookies, so default to that origin
 # and enable credentials. In production set CORS_ALLOWED_ORIGINS to a
 # comma-separated list of allowed origins (e.g. "https://app.example.com").
 origins_env = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
@@ -73,7 +73,7 @@ if origins_env:
     allow_credentials = True
 else:
     # Default to local frontend which requires cookies
-    allow_origins = ["http://localhost:5173", "https://repoai-frontend-516479753863.us-central1.run.app"]
+    allow_origins = ["https://repoai-frontend-516479753863.us-central1.run.app"]
     allow_credentials = True
 
 app.add_middleware(

@@ -38,7 +38,7 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
 
-    @Value("${app.frontend.url:http://localhost:5173}")
+    @Value("${app.frontend.url:https://repoai-frontend-516479753863.us-central1.run.app}")
     private String frontendUrl;
 
     @GetMapping("/token")

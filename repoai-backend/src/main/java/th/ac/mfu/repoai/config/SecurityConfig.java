@@ -20,7 +20,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            @Value("${app.frontend.url:http://localhost:5173}") String frontendUrl,
+            @Value("${app.frontend.url:https://repoai-frontend-516479753863.us-central1.run.app}") String frontendUrl,
             AuthenticationSuccessHandler oauth2SuccessHandler) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -48,7 +48,7 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationSuccessHandler oauth2SuccessHandler(
-            @Value("${app.frontend.url:http://localhost:5173}") String frontendUrl) {
+            @Value("${app.frontend.url:https://repoai-frontend-516479753863.us-central1.run.app}") String frontendUrl) {
         return (request, response, authentication) -> {
             String redirect = null;
             var cookies = request.getCookies();
