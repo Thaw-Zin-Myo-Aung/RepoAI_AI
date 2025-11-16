@@ -1,4 +1,25 @@
 steps:
+  # Optional: ensure target GCS bucket exists (replace substitutions below)
+  - name: 'gcr.io/cloud-builders/gsutil'
+    # run the check/create in the repo dir context (no effect on gsutil invocation)
+    dir: 'repoai-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        echo "Checking for bucket: gs://${_BUCKET_NAME}"
+        if ! gsutil ls -b "gs://${_BUCKET_NAME}" >/dev/null 2>&1; then
+          echo "Bucket gs://${_BUCKET_NAME} not found. Creating..."
+          # Use provided project substitution or fall back to environment
+          PROJECT=${_PROJECT_ID:-$PROJECT_ID}
+          LOCATION=${_BUCKET_LOCATION:-us-central1}
+          gsutil mb -p "${PROJECT}" -l "${LOCATION}" "gs://${_BUCKET_NAME}"
+          echo "Created gs://${_BUCKET_NAME} in project ${PROJECT}, location ${LOCATION}"
+        else
+          echo "Bucket gs://${_BUCKET_NAME} already exists"
+        fi
+
   # Install dependencies
   - name: 'node:20'
     # run in frontend subdirectory so package-lock.json is present
@@ -26,7 +47,13 @@ steps:
 
 # Substitutions for bucket name
 substitutions:
-  _BUCKET_NAME: 'repo-ai'
+  # Replace these placeholders in your Cloud Build trigger or via gcloud substitutions
+  # _BUCKET_NAME: required - set to your globally-unique bucket name (e.g. repo-ai-yourorg-123)
+  # _PROJECT_ID: optional - GCP project id where bucket should be created (defaults to build project)
+  # _BUCKET_LOCATION: optional - location for new bucket (defaults to us-central1)
+  _BUCKET_NAME: 'repo-ai-frontend'
+  _PROJECT_ID: 'thuraproj'
+  _BUCKET_LOCATION: 'us-central1'
 
 options:
   logging: CLOUD_LOGGING_ONLY
