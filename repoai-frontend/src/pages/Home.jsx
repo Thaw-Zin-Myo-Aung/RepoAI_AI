@@ -46,7 +46,7 @@ export default function Home() {
 
           <button
             onClick={() => navigate('/init-chat', { state: { repos: [] } })}
-            className="gap-2 bg-[#FFA500] hover:bg-yellow-600 text-black font-bold p-3 rounded-[10px] inline-flex items-center transition-colors text-lg mb-[30px]"
+            className="gap-2 bg-[#FFA500] hover:bg-yellow-600 text-black font-bold p-3 rounded-[8px] inline-flex items-center transition-colors text-lg mb-[30px]"
           >
             <Plus className="w-6 h-6" />
             <div className="font-bold text-[20px]">Create a new chat</div>

@@ -55,7 +55,7 @@ export default function Profile() {
 
               <button
                 onClick={() => logout.mutate()}
-                className="my-2.5 bg-[#343A40] text-[#FFFFFF] w-[50%] max-w-md py-[1%] rounded-[10px] font-medium transition-colors"
+                className="my-2.5 bg-[#343A40] text-[#FFFFFF] w-[50%] max-w-md py-[1%] rounded-[8px] font-medium transition-colors"
               >
                 Logout
               </button>
@@ -79,7 +79,7 @@ export default function Profile() {
 
               <button
                 onClick={() => setShowClearConfirm(true)}
-                className="text-[#FFFFFF] bg-[#343A40] p-2 rounded-[10px] font-medium transition-colors whitespace-nowrap"
+                className="text-[#FFFFFF] bg-[#343A40] p-2 rounded-[8px] font-medium transition-colors whitespace-nowrap"
               >
                 Clear History
               </button>

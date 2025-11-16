@@ -45,7 +45,7 @@ export default function RepoAILogin() {
           onClick={() => {
             window.location.href = LOGIN_URL;
           }}
-          className="px-3 py-1 rounded-[10px] bg-[#FFA500] flex items-center gap-1 mx-auto my-[25px] transition-all duration-200 hover:opacity-90"
+          className="px-3 py-3 rounded-[8px] bg-[#FFFFFF] flex items-center gap-1 mx-auto my-[25px] transition-all duration-200 hover:opacity-90"
         >
           <svg
             width="24"

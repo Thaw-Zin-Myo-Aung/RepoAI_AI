@@ -162,7 +162,7 @@ export default function RepoSelector() {
                 placeholder="Find repositories"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#212121] border-none text-white p-4 rounded-[10px] focus:outline-none focus:ring-2 focus:ring-[#FFA500] pl-10"
+                className="w-full bg-[#212121] border-none text-white p-4 rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#FFA500] pl-10"
               />
             </div>
 
