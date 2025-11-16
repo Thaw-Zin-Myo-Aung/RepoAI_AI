@@ -38,7 +38,7 @@ public class AuthController {
     @Autowired
     private UserRepository userRepository;
 
-    @Value("${app.frontend.url:https://repoai-frontend-516479753863.us-central1.run.app}")
+    @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
     @GetMapping("/token")
@@ -102,13 +102,17 @@ public class AuthController {
 
     // Start OAuth and remember where to send the user back on success
     @GetMapping("/start")
-    public ResponseEntity<Void> start(@org.springframework.web.bind.annotation.RequestParam(required = false) String redirect) {
+    public ResponseEntity<Void> start(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String redirect,
+            HttpServletRequest request) {
         String target = (redirect == null || redirect.isBlank()) ? frontendUrl : redirect;
+        boolean isHttps = request.isSecure()
+                || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
 
         ResponseCookie cookie = ResponseCookie.from("app_redirect",
                         URLEncoder.encode(target, StandardCharsets.UTF_8))
                 .httpOnly(true)
-                .secure(false) // set true if serving over HTTPS
+                .secure(isHttps) // true on HTTPS (e.g., Cloud Run), false on local HTTP
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(Duration.ofMinutes(5))
@@ -142,10 +146,13 @@ public class AuthController {
         // Invalidate Spring Security session and clear authentication
         new SecurityContextLogoutHandler().logout(request, response, authentication);
 
+    boolean isHttps = request.isSecure()
+        || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+
         // Proactively expire cookies that may exist in browser
         ResponseCookie clearSession = ResponseCookie.from("JSESSIONID", "")
                 .httpOnly(true)
-                .secure(false) // set true in HTTPS
+        .secure(isHttps)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(0)
@@ -153,7 +160,7 @@ public class AuthController {
 
         ResponseCookie clearRedirect = ResponseCookie.from("app_redirect", "")
                 .httpOnly(true)
-                .secure(false)
+        .secure(isHttps)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(0)
