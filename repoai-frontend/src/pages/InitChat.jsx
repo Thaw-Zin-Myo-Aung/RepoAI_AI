@@ -186,8 +186,10 @@ export default function RepoSelector() {
             </div>
 
             <div className="bg-zinc-900 rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead>
+              {/* Scroll container for table body with sticky header */}
+              <div className="max-h-[50vh] md:max-h-[420px] overflow-y-auto">
+                <table className="w-full table-fixed border-collapse">
+                  <thead className="sticky top-0 z-10 bg-zinc-900">
                   <tr className="border-b border-zinc-800">
                     <th className="text-left p-4 font-medium text-gray-400">
                       Repository
@@ -200,8 +202,8 @@ export default function RepoSelector() {
                       Actions
                     </th>
                   </tr>
-                </thead>
-                <tbody>
+                  </thead>
+                  <tbody>
                   {filteredRepos.map((repo, index) => (
                     <tr
                       key={index}
@@ -226,8 +228,9 @@ export default function RepoSelector() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         ) : (
