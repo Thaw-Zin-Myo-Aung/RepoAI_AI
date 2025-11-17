@@ -18,4 +18,10 @@ public interface BranchRepository extends JpaRepository<BranchEntity, Long> {
 
     // For cleanup: delete branches that are no longer present on GitHub
     Long deleteByRepoIdAndNameNotIn(Long repoId, List<String> names);
+
+    Optional<BranchEntity> findByRepoIdAndDefaultFlagTrue(Long repoId);
+
+    List<BranchEntity> findByRepoIdAndProtectedFlagTrueOrderByNameAsc(Long repoId);
+
+
 }
