@@ -2,7 +2,17 @@
 
 A modern React-based frontend application for AI-powered repository analysis and code assistance. This project provides an intuitive interface for chatting with AI about your codebase, viewing code changes, and managing repository operations.
 
+## Table of Contents
 
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Development](#development)
+- [Environment Variables](#environment-variables)
+- [API Layer and Hooks](#api-layer-and-hooks)
+- [Contributing](#contributing)
 
 ## Features
 
