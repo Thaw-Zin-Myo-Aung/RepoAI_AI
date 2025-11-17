@@ -119,7 +119,7 @@ export function ChatMessage({ message, sender, kind, meta, items }) {
             </div>
           ) : (
           !meta?.data?.raw_line && (
-            <div className="w-fit bg-[#2b2b2b] text-white px-4 py-3 rounded-2xl rounded-bl-none shadow whitespace-pre-wrap wrap-break-word">
+            <div className="w-fit bg-[#2b2b2b] max-w-[80%] text-white px-4 py-3 rounded-2xl rounded-bl-none shadow whitespace-pre-wrap wrap-break-word">
               {message}
             </div>
           ))}
