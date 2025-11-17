@@ -97,8 +97,6 @@ public class SecurityConfig {
             if (redirect == null || redirect.isBlank()) {
                 redirect = frontendUrl + "/home"; // fallback
             }
-            // Ensure longer session inactivity window (align with application.properties: 2 days)
-            request.getSession().setMaxInactiveInterval(2 * 24 * 60 * 60); // seconds
             response.sendRedirect(redirect);
         };
         }
@@ -106,14 +104,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow the configured frontend origin and common local dev origins
-        configuration.setAllowedOriginPatterns(List.of(
-            frontendUrl,
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:5174"
-        ));
+        // Allow the configured frontend origin
+        configuration.setAllowedOrigins(List.of(frontendUrl));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept"));
         configuration.setExposedHeaders(List.of("Location", "Link"));
