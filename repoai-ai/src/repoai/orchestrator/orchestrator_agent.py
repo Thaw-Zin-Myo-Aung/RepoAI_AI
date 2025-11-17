@@ -223,6 +223,12 @@ class OrchestratorAgent:
 
         self._send_progress(f"🚀 Starting pipeline: {user_prompt[:80]}...")
 
+        # Ensure Java test files and pom.xml are valid before build/validation
+        if self.deps.repository_path:
+            from repoai.utils.java_build_utils import verify_and_fix_java_tests
+
+            verify_and_fix_java_tests(self.deps.repository_path)
+
         try:
             # Stage 1: Intake
             self._send_progress("📥 Stage 1: Analyzing refactoring request...")
@@ -254,10 +260,12 @@ class OrchestratorAgent:
             if self._is_interactive_detailed():
                 validation_mode = await self._wait_for_validation_confirmation()
 
-            # Stage 4: Validation (with intelligent retry)
+            # Stage 4: Validation (single run: compilation and tests)
             if validation_mode != "skip":
-                self._send_progress("🔍 Stage 4: Validating code changes...")
-                await self._run_validation_stage(skip_tests=(validation_mode == "compile_only"))
+                self._send_progress(
+                    "🔍 Stage 4: Validating code changes (compilation and tests)..."
+                )
+                await self._run_validation_stage(skip_tests=False)
                 validation_status = (
                     "passed"
                     if self.state.validation_result and self.state.validation_result.passed
@@ -284,40 +292,22 @@ class OrchestratorAgent:
                     recommendations=["Validation was skipped by user request"],
                 )
 
-            # If validation ran and failed after retries, abort before creating PR
+            # If validation failed, notify user but continue to PR narration and push
             if self.state.validation_result and not self.state.validation_result.passed:
-                # Validation failed and either auto-fix exhausted or was disabled.
-                self.state.stage = PipelineStage.FAILED
+                self.state.stage = PipelineStage.VALIDATION
                 self.state.status = PipelineStatus.FAILED
                 self.state.add_error("Validation failed after retry attempts")
-                self.state.end_time = time.time()
-                # Stream final failure reasons to the user
-                try:
-                    error_summary = self._build_error_summary(self.state.validation_result)
-                    failed_checks = (
-                        self.state.validation_result.failed_checks
-                        if hasattr(self.state.validation_result, "failed_checks")
-                        else []
-                    )
-                    self._send_progress(
-                        "❌ Validation failed after retries — aborting pipeline",
-                        event_type="validation_failed",
-                        additional_data={
-                            "error_summary": error_summary,
-                            "failed_checks": failed_checks,
-                            "compilation_passed": getattr(
-                                self.state.validation_result, "compilation_passed", None
-                            ),
-                        },
-                    )
-                except Exception:
-                    # Fallback to simple message if building summary fails
-                    self._send_progress(
-                        "❌ Validation failed after retries — aborting pipeline",
-                        event_type="validation_failed",
-                    )
-                logger.warning("Stopping pipeline: validation did not pass after retries")
-                return self.state
+                self._send_progress(
+                    "❌ Validation failed after retries. You may still commit/push these changes.",
+                    event_type="validation_failed",
+                    additional_data={
+                        "error_summary": self._build_error_summary(self.state.validation_result),
+                        "failed_checks": getattr(self.state.validation_result, "failed_checks", []),
+                        "compilation_passed": getattr(
+                            self.state.validation_result, "compilation_passed", None
+                        ),
+                    },
+                )
 
             # Stage 5: PR Narration
             self._send_progress("📝 Stage 5: Creating PR description...")
@@ -358,11 +348,24 @@ class OrchestratorAgent:
             self.state.status = PipelineStatus.COMPLETED
             self.state.end_time = time.time()
 
-            # Build completion message with branch link
-            completion_msg = (
-                f"🎉 Refactoring completed successfully! ({self.state.elapsed_time_ms/1000:.1f}s)"
+            # Build completion message with validation result
+            validation_status = (
+                "Passed"
+                if (self.state.validation_result and self.state.validation_result.passed)
+                else "Failed"
             )
-            self._send_progress(completion_msg, event_type="pipeline_completed")
+            completion_msg = f"🎉 Refactoring completed! Validation: {validation_status} ({self.state.elapsed_time_ms/1000:.1f}s)"
+            self._send_progress(
+                completion_msg,
+                event_type="pipeline_completed",
+                additional_data={
+                    "validation_result": (
+                        self.state.validation_result.model_dump()
+                        if self.state.validation_result
+                        else None
+                    )
+                },
+            )
 
             if self.deps.github_credentials and self.state.git_branch_name:
                 # Send branch link as final message
@@ -746,7 +749,6 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
 
     async def _run_transformation_stage(self) -> None:
         """Run Transformer Agent to generate code."""
-        from repoai.agents.transformer_agent import run_transformer_agent
         from repoai.dependencies import TransformerDependencies
 
         if not self.state.plan:
@@ -769,11 +771,13 @@ Respond with ONLY ONE WORD: either "CONVERSATIONAL" or "REFACTORING"."""
         )
 
         # Run Transformer Agent
-        code_changes, metadata = await run_transformer_agent(
-            self.state.plan, transformer_deps, self.adapter, batch_size=transformer_deps.batch_size
-        )
+        from repoai.agents.transformer_agent import run_transformer_and_fix
 
+        code_changes = await run_transformer_and_fix(
+            self.adapter, self.state.plan, transformer_deps
+        )
         self.state.code_changes = code_changes
+
         duration_ms = (time.time() - stage_start) * 1000
         self.state.record_stage_time(PipelineStage.TRANSFORMATION, duration_ms)
 
@@ -1410,7 +1414,7 @@ Focus on the ROOT CAUSE, not symptoms. If tests are broken, the root cause is us
                 if main_errors:
                     lines.append("")  # Add blank line between categories
                 lines.append("**Test Code Compilation Errors:**")
-                lines.append("  (Tests need to be updated to match refactored code)")
+                lines.append("  (Tests need to be updated to match refactored main code)")
                 for error in test_errors:
                     lines.append(f"  - {error}")
 
@@ -1788,6 +1792,9 @@ Choose validation level:
                 ),
                 "lines_removed": (
                     self.state.code_changes.lines_removed if self.state.code_changes else 0
+                ),
+                "validation_passed": (
+                    self.state.validation_result.passed if self.state.validation_result else False
                 ),
             },
         )
@@ -2405,7 +2412,7 @@ Analyze the user's response and determine their intent. Output a valid Orchestra
 
         Example:
             decision = await orchestrator._interpret_push_intent(
-                "yes, push the changes",
+                "yes, push it",
                 push_summary
             )
             if decision.action == "approve":

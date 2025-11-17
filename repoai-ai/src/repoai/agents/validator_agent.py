@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 
 from repoai.dependencies.base import ValidatorDependencies
@@ -152,6 +153,11 @@ Identify potential issues, risks, and provide recommendations.
 
         repo_path = Path(ctx.deps.repository_path)
 
+        # Ensure Java test files and pom.xml are valid before compilation
+        from repoai.utils.java_build_utils import verify_and_fix_java_tests
+
+        verify_and_fix_java_tests(repo_path)
+
         logger.info(f"🔨 Compiling Java project at: {repo_path}")
 
         try:
@@ -254,41 +260,11 @@ Identify potential issues, risks, and provide recommendations.
     async def run_unit_tests(
         ctx: RunContext[ValidatorDependencies],
         test_pattern: str | None = None,
+        compilation_result: CompilationResultModel | None = None,
     ) -> dict[str, Any]:
         """
         Run unit tests for the Java project using Maven or Gradle.
-
-        This executes ACTUAL tests, not simulation!
-        - Detects build tool (Maven/Gradle) automatically
-        - Runs test suite via subprocess
-        - Parses test results including failures
-        - Returns structured test information
-
-        Args:
-            ctx: Agent runtime context with ValidatorDependencies
-            test_pattern: Optional test pattern/filter (e.g., "**/Test*.java")
-
-        Returns:
-            dict with:
-                - "all_passed": bool - Whether all tests passed
-                - "tests_run": int - Number of tests executed
-                - "failures": int - Number of test failures
-                - "errors": int - Number of test errors
-                - "skipped": int - Number of skipped tests
-                - "pass_rate": float - Percentage of tests passed (0.0-1.0)
-                - "duration_ms": float - Test execution time
-                - "failed_tests": list of dicts with:
-                    - "test_class": str - Test class name
-                    - "test_method": str - Test method name
-                    - "error_type": str - Exception type
-                    - "message": str - Failure message
-
-        Example:
-            result = await run_unit_tests(ctx)
-            if not result["all_passed"]:
-                print(f"Failed: {result['failures']}/{result['tests_run']}")
-                for test in result["failed_tests"]:
-                    print(f"  {test['test_class']}.{test['test_method']}")
+        Only runs tests if compilation_result is provided and successful.
         """
         # Handle None repository_path
         if not ctx.deps.repository_path:
@@ -313,7 +289,33 @@ Identify potential issues, risks, and provide recommendations.
 
         repo_path = Path(ctx.deps.repository_path)
 
+        # Ensure Java test files and pom.xml are valid before running tests
+        from repoai.utils.java_build_utils import verify_and_fix_java_tests
+
+        verify_and_fix_java_tests(repo_path)
+
         logger.info(f"🧪 Running tests for Java project at: {repo_path}")
+
+        # Only run tests if compilation_result is provided and successful
+        if compilation_result is not None and not compilation_result.compiles:
+            logger.warning("Skipping tests: compilation failed.")
+            return {
+                "all_passed": False,
+                "tests_run": 0,
+                "failures": 0,
+                "errors": 1,
+                "skipped": 0,
+                "pass_rate": 0.0,
+                "duration_ms": 0.0,
+                "failed_tests": [
+                    {
+                        "test_class": "BuildSystem",
+                        "test_method": "compilation",
+                        "error_type": "CompilationFailed",
+                        "message": "Compilation failed, skipping tests.",
+                    }
+                ],
+            }
 
         try:
             # Detect build tool
@@ -365,32 +367,16 @@ Identify potential issues, risks, and provide recommendations.
                 for failure in test_result.failures
             ]
 
-            result = {
+            return {
                 "all_passed": test_result.success,
                 "tests_run": test_result.tests_run,
                 "failures": test_result.tests_failed,
-                "errors": 0,  # TestResult doesn't separate failures/errors
+                "errors": test_result.tests_failed,  # treat failed as errors for summary
                 "skipped": test_result.tests_skipped,
                 "pass_rate": test_result.pass_rate,
                 "duration_ms": test_result.duration_ms,
-                "build_tool": test_result.build_tool,
                 "failed_tests": failed_tests_list,
             }
-
-            if test_result.success:
-                logger.info(
-                    f"✅ All tests passed: {test_result.tests_run} tests "
-                    f"({test_result.duration_ms:.0f}ms)"
-                )
-            else:
-                logger.warning(
-                    f"❌ Tests failed: {test_result.tests_failed} failures "
-                    f"out of {test_result.tests_run} tests "
-                    f"({test_result.duration_ms:.0f}ms)"
-                )
-
-            return result
-
         except Exception as e:
             logger.error(f"Test execution failed: {e}")
             return {
@@ -404,9 +390,9 @@ Identify potential issues, risks, and provide recommendations.
                 "failed_tests": [
                     {
                         "test_class": "System",
-                        "test_method": "execution",
-                        "error_type": "RuntimeError",
-                        "message": f"Test execution error: {str(e)}",
+                        "test_method": "run_unit_tests",
+                        "error_type": "Exception",
+                        "message": str(e),
                     }
                 ],
             }
@@ -710,6 +696,14 @@ Identify potential issues, risks, and provide recommendations.
     return agent
 
 
+class CompilationResultModel(BaseModel):
+    compiles: bool = False
+    error_count: int = 0
+    warning_count: int = 0
+    duration_ms: float = 0.0
+    # Add more fields as needed for your use case
+
+
 async def run_validator_agent(
     code_changes: CodeChanges,
     dependencies: ValidatorDependencies,
@@ -749,21 +743,17 @@ async def run_validator_agent(
     # Track timing
     start_time = time.time()
 
-    # Run compilation and/or tests only when explicitly requested by the caller
-    # via `dependencies` flags. This avoids duplicated work (compile then
-    # `mvn test` which triggers compilation again) and gives the caller control
-    # over whether to perform expensive real validation steps.
+    # Always run compilation first, then tests if compilation succeeds and test files exist
     compilation_summary = None
     tests_summary = None
 
     try:
-        # Detect build tool (only if repository_path is provided)
         repo_path_str = getattr(dependencies, "repository_path", None)
+        build_info = None
         if not repo_path_str:
             logger.info(
                 "No repository_path provided in dependencies; skipping pre-validation build/tests"
             )
-            build_info = None
         else:
             repo_path = Path(repo_path_str)
             build_info = await detect_build_tool(repo_path)
@@ -773,34 +763,31 @@ async def run_validator_agent(
             if dependencies.progress_callback:
                 await dependencies.progress_callback(line)
 
-        # Flags on dependencies control behavior:
-        # - run_tests: if True, run tests (this will perform compilation as part
-        #   of the test lifecycle). Default: False.
-        # - run_compile: if True and run_tests is False, run a compile-only check.
-        run_tests_flag = bool(getattr(dependencies, "run_tests", False))
-        run_compile_flag = bool(getattr(dependencies, "run_compile", False))
-
         if build_info is not None and build_info.tool != "unknown":
-            if run_tests_flag:
-                # Run tests (includes compilation)
-                test_result = await run_java_tests(
-                    repo_path=Path(str(repo_path_str)),
-                    build_tool_info=build_info,
-                    test_pattern=None,
-                    progress_callback=_forward if dependencies.progress_callback else None,
-                )
-                tests_summary = test_result
-            elif run_compile_flag:
-                # Run compile-only (fast check)
-                compile_result = await compile_java_project(
-                    repo_path=Path(str(repo_path_str)),
-                    build_tool_info=build_info,
-                    clean=False,
-                    skip_tests=True,
-                    progress_callback=_forward if dependencies.progress_callback else None,
-                )
-                compilation_summary = compile_result
+            # Run compilation first
+            logger.info("ValidatorAgent: Running compilation step")
+            compilation_summary = await compile_java_project(
+                repo_path=repo_path,
+                build_tool_info=build_info,
+                clean=False,
+                skip_tests=True,
+                progress_callback=_forward if dependencies.progress_callback else None,
+            )
 
+            # If compilation succeeded, check for test files and run tests
+            if compilation_summary.success:
+                from repoai.utils.test_detection import has_java_tests
+
+                if has_java_tests(repo_path):
+                    logger.info("ValidatorAgent: Running tests step")
+                    tests_summary = await run_java_tests(
+                        repo_path=repo_path,
+                        build_tool_info=build_info,
+                        test_pattern=None,
+                        progress_callback=_forward if dependencies.progress_callback else None,
+                    )
+                else:
+                    logger.info("ValidatorAgent: No test files detected, skipping tests.")
     except Exception as e:
         logger.warning(f"Pre-validation build/run failed: {e}")
 

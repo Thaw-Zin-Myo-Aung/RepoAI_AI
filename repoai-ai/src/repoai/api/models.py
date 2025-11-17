@@ -167,6 +167,16 @@ class JobStatusResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     retry_count: int = 0
 
+    # Confirmation checkpoint info
+    awaiting_confirmation: str | None = Field(
+        default=None,
+        description="Current confirmation checkpoint (plan, validation, push) if waiting for user input",
+    )
+    confirmation_data: dict[str, object] | None = Field(
+        default=None,
+        description="Additional data for confirmation (e.g., plan summary, validation options)",
+    )
+
     # Final results (when complete)
     result: dict[str, object] | None = Field(
         default=None, description="Complete result (when stage=complete)"

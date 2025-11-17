@@ -166,6 +166,8 @@ async def get_status(session_id: str) -> JobStatusResponse:
         errors=state.errors,
         warnings=state.warnings,
         retry_count=state.retry_count,
+        awaiting_confirmation=getattr(state, "awaiting_confirmation", None),
+        confirmation_data=getattr(state, "confirmation_data", None),
         result=state.to_dict() if state.is_complete or state.is_failed else None,
     )
 

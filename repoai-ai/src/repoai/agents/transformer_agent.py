@@ -11,8 +11,6 @@ It carries out the following tasks:
 This agent uses code-specialized models optimized for code generation.
 """
 
-from __future__ import annotations
-
 import difflib
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -29,6 +27,7 @@ from repoai.models import CodeChange, CodeChanges, RefactorPlan
 from repoai.parsers.java_ast_parser import extract_relevant_context, parse_java_file
 from repoai.utils.file_writer import write_code_changes_to_disk
 from repoai.utils.logger import get_logger
+from repoai.utils.test_detection import find_test_files_for_class
 
 from .prompts import (
     TRANSFORMER_INSTRUCTIONS,
@@ -127,7 +126,7 @@ Include proper imports, annotations, and documentation.
  */
 public class {class_name} {{
     
-    // TODO: Add fields, constructors, and methods
+    
     
 }}
 """,
@@ -897,12 +896,31 @@ Generate the complete code change including:
                 # Re-raise non-context errors
                 raise
 
-    # Process chunks with adaptive behavior using _process_chunk and merge results
+    # Enhanced: Always refactor related test files when main code changes
     for chunk_idx, step_chunk in enumerate(_chunks(plan.steps, max(1, batch_size)), start=1):
         current_batch = len(step_chunk)
         logger.info(
             f"Processing chunk {chunk_idx} (steps {step_chunk[0].step_number}-{step_chunk[-1].step_number}) with batch_size={current_batch}"
         )
+
+        # Collect all target files for this chunk
+        all_target_files = set()
+        for step in step_chunk:
+            for file_path in step.target_files:
+                all_target_files.add(file_path)
+
+                if file_path.endswith(".java") and "src/main/java" in file_path:
+                    repo_path = dependencies.repository_path or ""
+                    if repo_path:
+                        test_files = find_test_files_for_class(repo_path, file_path)
+                        for test_file in test_files:
+                            all_target_files.add(test_file)
+
+        # Update step_chunk to include test files in target_files
+        for step in step_chunk:
+            step.target_files = list(
+                set(step.target_files) | {f for f in all_target_files if f != step.target_files}
+            )
 
         # Use adaptive _process_chunk which will retry with smaller batches on token errors
         code_changes_result = await _process_chunk(step_chunk, current_batch)
@@ -1395,3 +1413,22 @@ def _calculate_diff_stats(diff: str) -> tuple[int, int]:
             lines_removed += 1
 
     return lines_added, lines_removed
+
+
+def run_transformer_and_fix(agent, step_description, dependencies):
+    """
+    Run the transformer agent and immediately fix Java test files and pom.xml after code generation.
+    Returns the output from the agent.
+    """
+    import asyncio
+
+    async def _run():
+        result = await agent.run(step_description, deps=dependencies)
+        repo_path = getattr(dependencies, "repository_path", None)
+        if repo_path:
+            from repoai.utils.java_build_utils import verify_and_fix_java_tests
+
+            verify_and_fix_java_tests(repo_path)
+        return result.output
+
+    return asyncio.run(_run())
