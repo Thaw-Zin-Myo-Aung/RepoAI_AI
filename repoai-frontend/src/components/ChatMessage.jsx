@@ -190,7 +190,7 @@ export function ChatMessage({ message, sender, kind, meta, items }) {
       {isUser && (
         <div className="flex flex-col items-end">
           <span className="text-xs text-gray-400 mb-1 mr-1">User</span>
-          <div className="max-w-fit bg-[#f5a623] text-black px-4 py-3 rounded-2xl rounded-br-none shadow whitespace-pre-wrap wrap-break-word">
+          <div className="max-w-fit bg-[#ffffff] text-black px-4 py-3 rounded-2xl rounded-br-none shadow whitespace-pre-wrap wrap-break-word">
             {message}
           </div>
         </div>

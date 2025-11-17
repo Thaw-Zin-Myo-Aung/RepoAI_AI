@@ -94,9 +94,9 @@ export default function RepoSelector() {
       if (!selectedBranch) return;
       setCreatingConversation(true);
       try {
-  const repoId = selectedRepo?.id || selectedRepo?.repo_id || null;
-  // prefer the persisted branch object's id from session, fall back to selectedBranch (name)
-  const branchId = currentBranch?.id || selectedBranch;
+        const repoId = selectedRepo?.id || selectedRepo?.repo_id || null;
+        // prefer the persisted branch object's id from session, fall back to selectedBranch (name)
+        const branchId = currentBranch?.id || selectedBranch;
         const repoName = selectedRepo?.name || selectedRepo?.full_name || '';
         const dateStr = new Date().toISOString().split('T')[0];
         const title = `${repoName} - ${selectedBranch} - ${dateStr}`;
@@ -136,7 +136,7 @@ export default function RepoSelector() {
   return (
     <div className="flex h-screen bg-[#121212] text-[#FFFFFF]">
       {/* Sidebar */}
-      
+
       {/* Main Content */}
       <div className="flex-1 p-[5%]">
         {step === 1 ? (
@@ -171,11 +171,10 @@ export default function RepoSelector() {
                 <button
                   key={filter}
                   onClick={() => setActiveFilter(filter)}
-                  className={`px-6 py-2 rounded-lg font-medium bg-[#212121] transition ${
-                    activeFilter === filter
+                  className={`px-6 py-2 rounded-lg font-medium bg-[#212121] transition ${activeFilter === filter
                       ? "bg-[#FFFFFF] text-[#121212] "
                       : "bg-zinc-900 text-[#FFFFFF] hover:bg-zinc-800"
-                  }`}
+                    }`}
                 >
                   {filter}
                 </button>
@@ -193,7 +192,7 @@ export default function RepoSelector() {
                     <th className="text-left p-4 font-medium text-gray-400">
                       Visibility
                     </th>
-                    
+
                     <th className="text-left p-4 font-medium text-gray-400">
                       Actions
                     </th>
@@ -207,11 +206,11 @@ export default function RepoSelector() {
                     >
                       <td className="p-4">{repo.name}</td>
                       <td className="p-4">
-                        <span className="px-3 py-1 bg-zinc-800 rounded-full text-sm">
+                        <span className="px-3 py-2 bg-zinc-800 rounded-full text-sm">
                           {repo.private ? "Private" : "Public"}
                         </span>
                       </td>
-                  
+
                       <td className="p-4">
                         <button
                           onClick={() => handleSelectRepo(repo)}
@@ -269,7 +268,8 @@ export default function RepoSelector() {
                       useSession.getState().setCurrentBranch(found || { name: val });
                     }
                   }}
-                  className="w-full bg-zinc-900 text-white px-4 py-4 rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
+                  className="w-full bg-zinc-900 text-white px-4 py-4 rounded-lg appearance-none focus:outline-none focus:ring-2 focus:ring-white
+ cursor-pointer"
                 >
                   <option value="">Select a branch</option>
                   {branchesLoading ? (
@@ -304,11 +304,10 @@ export default function RepoSelector() {
               <button
                 onClick={handleStartRefactoring}
                 disabled={!selectedBranch || creatingConversation}
-                className={`px-8 py-3 rounded-lg font-medium transition ${
-                  selectedBranch && !creatingConversation
-                    ? "bg- hover:bg-[#FFFFFF] text-black"
+                className={`px-8 py-3 rounded-lg font-medium transition ${selectedBranch && !creatingConversation
+                    ? "bg-white hover:bg-gray-100 text-black"
                     : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                }`}
+                  }`}
               >
                 {creatingConversation ? 'Creating...' : 'Start Refactoring'}
               </button>

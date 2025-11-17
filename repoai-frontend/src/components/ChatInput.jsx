@@ -28,7 +28,7 @@ export default function ChatInput({ chatMessages, setChatMessages, onSend, place
       <button
         onClick={handleSend}
         disabled={disabled}
-        className={`flex items-center gap-2 bg-[#f5a623] hover:bg-[#e89920] text-black font-medium px-6 py-3 rounded-xl transition-all ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-[#f5a623]' : ''}`}
+        className={`flex items-center gap-2 bg-[#ffffff] hover:bg-[#e89920] text-black font-medium px-6 py-3 rounded-xl transition-all ${disabled ? 'opacity-60 cursor-not-allowed hover:bg-[#ffffff]' : ''}`}
       >
         {loading && (
           <span className="inline-block h-4 w-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
