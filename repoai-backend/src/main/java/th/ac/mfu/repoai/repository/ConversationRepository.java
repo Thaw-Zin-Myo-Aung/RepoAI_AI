@@ -22,4 +22,11 @@ public interface ConversationRepository extends JpaRepository<Conversation, Long
     // Filter by repo + status
     List<Conversation> findByUserGithubIdAndRepositoryRepoIdAndStatusOrderByUpdatedAtDesc(
             Long githubId, Long repoId, ConversationStatus status);
+
+    // ===== ownership & single-row =====
+    Optional<Conversation> findByIdAndUserGithubId(Long id, Long githubId);
+
+    // Latest conversation under a repo (handy for “resume last”)
+    Optional<Conversation> findTop1ByUserGithubIdAndRepositoryRepoIdOrderByUpdatedAtDesc(Long githubId, Long repoId);
+
 }
