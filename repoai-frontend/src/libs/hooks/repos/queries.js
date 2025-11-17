@@ -17,7 +17,15 @@ export function useReposList(params = undefined, options = {}) {
 // If your backend's sync endpoint returns the updated repositories list,
 // use this hook to call the sync endpoint and read repos directly from its response.
 export function useReposFromSync(options = {}) {
-  return useGetQuery(ENDPOINTS.REPOSITORIES.SYNC, undefined, { enabled: true, ...options });
+  return useGetQuery(ENDPOINTS.REPOSITORIES.SYNC, undefined, {
+    enabled: true,
+    // Keep data fresh for 5 minutes before considering stale
+    staleTime: 5 * 60 * 1000,
+    // Retain cached data for 10 minutes (React Query v5 uses gcTime instead of cacheTime)
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
 }
 
 export function useSyncReposAndRefresh() {
