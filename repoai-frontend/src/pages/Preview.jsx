@@ -47,7 +47,7 @@ export default function RefactorPreviewModal({
           </button>
           <button
             onClick={onAccept}
-            className="px-6 py-2 bg-[#FFA500] hover:bg-[#ffb94d] text-black font-semibold rounded-lg transition-all"
+            className="px-6 py-2 bg-[#FFFFFF] hover:bg-[#ffb94d] text-black font-semibold rounded-lg transition-all"
           >
             Accept and Save
           </button>

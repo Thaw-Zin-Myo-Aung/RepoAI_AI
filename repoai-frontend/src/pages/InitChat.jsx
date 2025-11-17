@@ -136,18 +136,18 @@ export default function RepoSelector() {
   return (
     <div className="flex h-screen bg-[#121212] text-[#FFFFFF]">
       {/* Sidebar */}
-
+      
       {/* Main Content */}
       <div className="flex-1 p-[5%]">
         {step === 1 ? (
           <>
             {/* Step 1: Select Repository */}
             <div className="mb-8">
-              <h2 className="text-3xl font-semibold mb-4 text-[#FFA500]">
+              <h2 className="text-3xl font-semibold mb-4 text-[#FFFFFF]">
                 Step 1 of 2: Select Repository
               </h2>
               <div className="flex gap-2 mb-6">
-                <div className="flex-1 h-2 bg-orange-500 rounded"></div>
+                <div className="flex-1 h-2 bg-[#FFFFFF] rounded"></div>
                 <div className="flex-1 h-2 bg-zinc-800 rounded"></div>
               </div>
             </div>
@@ -162,7 +162,7 @@ export default function RepoSelector() {
                 placeholder="Find repositories"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#212121] border-none text-white p-4 rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#FFA500] pl-10"
+                className="w-full bg-[#212121] border-none text-white p-4 rounded-[8px] focus:outline-none focus:ring-2 focus:ring-[#FFFFFF] pl-10"
               />
             </div>
 
@@ -173,7 +173,7 @@ export default function RepoSelector() {
                   onClick={() => setActiveFilter(filter)}
                   className={`px-6 py-2 rounded-lg font-medium bg-[#212121] transition ${
                     activeFilter === filter
-                      ? "bg-[#FFA500] text-[#121212] "
+                      ? "bg-[#FFFFFF] text-[#121212] "
                       : "bg-zinc-900 text-[#FFFFFF] hover:bg-zinc-800"
                   }`}
                 >
@@ -193,9 +193,7 @@ export default function RepoSelector() {
                     <th className="text-left p-4 font-medium text-gray-400">
                       Visibility
                     </th>
-                    <th className="text-left p-4 font-medium text-gray-400">
-                      Last Updated
-                    </th>
+                    
                     <th className="text-left p-4 font-medium text-gray-400">
                       Actions
                     </th>
@@ -213,11 +211,11 @@ export default function RepoSelector() {
                           {repo.private ? "Private" : "Public"}
                         </span>
                       </td>
-                      <td className="p-4 text-gray-400">{repo.lastUpdated}</td>
+                  
                       <td className="p-4">
                         <button
                           onClick={() => handleSelectRepo(repo)}
-                          className="text-orange-500 hover:text-orange-400 font-medium"
+                          className="text-[#FFFFFF] font-medium"
                         >
                           Refactor
                         </button>
@@ -234,13 +232,13 @@ export default function RepoSelector() {
             <div className="mb-8">
               <h2
                 className="text-3xl font-semibold mb-4"
-                style={{ color: "#FFA500" }}
+                style={{ color: "#FFFFFF" }}
               >
                 Step 2 of 2: Select Branch
               </h2>
               <div className="flex gap-2 mb-6">
-                <div className="flex-1 h-2 bg-orange-500 rounded"></div>
-                <div className="flex-1 h-2 bg-orange-500 rounded"></div>
+                <div className="flex-1 h-2 bg-[#FFFFFF] rounded"></div>
+                <div className="flex-1 h-2 bg-[#FFFFFF] rounded"></div>
               </div>
             </div>
 
@@ -308,7 +306,7 @@ export default function RepoSelector() {
                 disabled={!selectedBranch || creatingConversation}
                 className={`px-8 py-3 rounded-lg font-medium transition ${
                   selectedBranch && !creatingConversation
-                    ? "bg-orange-500 hover:bg-orange-600 text-black"
+                    ? "bg- hover:bg-[#FFFFFF] text-black"
                     : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
                 }`}
               >

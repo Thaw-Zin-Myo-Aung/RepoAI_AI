@@ -40,14 +40,14 @@ export default function Profile() {
               <h2 className="text-2xl text-white font-semibold mt-8 mb-2">
                 {displayName}
               </h2>
-              <p className="text-[#FFA500] mb-2">{role}</p>
+              <p className="text-[#FFFFFF] mb-2">{role}</p>
               {email && <p className="text-sm mb-4 text-[#CCCCCC]">{email}</p>}
               {profileUrl && (
                 <a
                   href={profileUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[#FFA500] underline mb-6"
+                  className="text-[#FFFFFF] underline mb-6"
                 >
                   View GitHub Profile
                 </a>
@@ -69,10 +69,10 @@ export default function Profile() {
                 <h3 className="text-xl font-semibold mb-2">
                   Clear All History?
                 </h3>
-                <p className="text-sm mb-1" style={{ color: "#FFA500" }}>
+                <p className="text-sm mb-1" style={{ color: "#FFFFFF" }}>
                   This will permanently delete all {historyCount} refactoring sessions.
                 </p>
-                <p className="text-sm" style={{ color: "#FFA500" }}>
+                <p className="text-sm" style={{ color: "#FFFFFF" }}>
                   This action cannot be undone.
                 </p>
               </div>

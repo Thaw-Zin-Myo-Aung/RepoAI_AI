@@ -26,7 +26,7 @@ const ChatHistory = () => {
       <main className="flex-1 p-[5%]">
         <div className="max-w-6xl">
           <h2 className="text-4xl font-extrabold mb-2">Chat History</h2>
-          <p className="text-[#FFA500]">
+          <p className="text-[#FFFFFF]">
             You've completed{" "}
             <span className="font-semibold">{conversations.length}</span>{" "}
             refactoring sessions.

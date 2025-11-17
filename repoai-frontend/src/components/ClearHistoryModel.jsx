@@ -28,7 +28,7 @@ export default function ClearHistoryModal({ onCancel, onConfirm }) {
               onConfirm();
               navigate("/chat-history", { state: { clear: true } });
             }}
-            className="px-[15px] py-[3px] rounded-lg bg-[#FFA500] text-[#000000] hover:bg-[#ffb733] transition"
+            className="px-[15px] py-[3px] rounded-lg bg-[#FFFFFF] text-[#000000] hover:bg-[#ffb733] transition"
           >
             Clear History
           </button>

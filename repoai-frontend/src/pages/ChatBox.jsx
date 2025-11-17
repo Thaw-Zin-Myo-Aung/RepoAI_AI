@@ -470,7 +470,7 @@ except BadRequest as e:
                 <div className="flex justify-start mt-2 ml-12">
                   <button
                     onClick={() => handleShowPreview(msg.id)}
-                    className="bg-[#FFA500] text-black font-semibold px-5 py-2 rounded-lg hover:bg-[#ffb733] transition-all duration-200"
+                    className="bg-[#FFFFFF] text-black font-semibold px-5 py-2 rounded-lg hover:bg-[#ffb733] transition-all duration-200"
                   >
                     Show Refactor Preview
                   </button>

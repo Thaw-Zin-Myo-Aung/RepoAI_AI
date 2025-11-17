@@ -25,7 +25,7 @@ export default function Home() {
         <h1 className="text-3xl font-bold mb-2 text-[#FFFFFF] m-0">
           {user?.username ? `Welcome, @${user.username}` : 'Welcome to Repo AI'}
         </h1>
-        <p className="text-[#FFA500] my-5">
+        <p className="text-[#FFFFFF] my-5">
           {user?.username
             ? 'Connected to GitHub • Your repositories are ready to analyze'
             : 'Not connected to GitHub'}
@@ -46,13 +46,13 @@ export default function Home() {
 
           <button
             onClick={() => navigate('/init-chat', { state: { repos: [] } })}
-            className="gap-2 bg-[#FFA500] hover:bg-yellow-600 text-black font-bold p-3 rounded-[8px] inline-flex items-center transition-colors text-lg mb-[30px]"
+            className="gap-2 bg-[#FFFFFF] hover:bg-yellow-600 text-black font-bold p-3 rounded-[8px] inline-flex items-center transition-colors text-lg mb-[30px]"
           >
             <Plus className="w-6 h-6" />
             <div className="font-bold text-[20px]">Create a new chat</div>
           </button>
 
-          <p className="text-[#FFA500]">
+          <p className="text-[#FFFFFF]">
             Pick a repository and branch to analyze your code
           </p>
         </div>
