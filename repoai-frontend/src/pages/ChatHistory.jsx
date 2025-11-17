@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConversationsList } from "../libs/hooks/conversations/queries";
+import { useDeleteConversation } from "../libs/hooks/conversations/mutation";
 
 const ChatHistory = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
   // Fetch conversations from the API
   const {
@@ -13,6 +15,9 @@ const ChatHistory = () => {
     isError,
     error,
   } = useConversationsList();
+  const { mutate: deleteConversation, isPending: isDeleting } = useDeleteConversation({
+    onSettled: () => setPendingDeleteId(null),
+  });
   console.log(conversations);
   // ✅ FIX: Added effect to detect state and clear sessions
   useEffect(() => {
@@ -45,7 +50,7 @@ const ChatHistory = () => {
             </div>
           )}
           <div className="bg-[#212121] border border-[#404040] rounded-lg overflow-hidden mt-6">
-            <div className="p-[20px] grid grid-cols-12 gap-4 bg-[#404040] rounded-t-lg font-semibold text-gray-300">
+            <div className="p-5 grid grid-cols-12 gap-4 bg-[#404040] rounded-t-lg font-semibold text-gray-300">
               <div className="col-span-5">Name</div>
               <div className="col-span-3">Date</div>
               <div className="col-span-4 flex justify-center">Action</div>
@@ -61,7 +66,7 @@ const ChatHistory = () => {
                 conversations.map((session, index) => (
                   <div
                     key={session.id}
-                    className={`grid grid-cols-12 gap-4 p-[20px] cursor-pointer ${
+                    className={`grid grid-cols-12 gap-4 p-5 cursor-pointer ${
                       index !== conversations.length - 1
                         ? "border-b border-gray-800"
                         : ""
@@ -79,6 +84,19 @@ const ChatHistory = () => {
                     >
                       View
                     </div>
+                    <button
+                      type="button"
+                      className="col-span-4 text-white font-semibold flex justify-center disabled:opacity-60"
+                      disabled={isDeleting && pendingDeleteId === session.id}
+                      onClick={() => {
+                        if (confirm(`Delete conversation "${session.title}"?`)) {
+                          setPendingDeleteId(session.id);
+                          deleteConversation({ id: session.id });
+                        }
+                      }}
+                    >
+                      {isDeleting && pendingDeleteId === session.id ? "Deleting…" : "Delete"}
+                    </button>
                   </div>
                 ))
               ))}
