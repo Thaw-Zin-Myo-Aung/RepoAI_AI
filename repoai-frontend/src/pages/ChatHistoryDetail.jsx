@@ -51,7 +51,7 @@ export default function ChatHistoryDetail() {
 
   return (
     <SidebarLayout>
-      <div className="flex flex-col h-screen bg-[#0d0d0d] w-[78%] text-white">
+      <div className="flex flex-col h-screen bg-[#0d0d0d] w-full text-white">
         <div className="flex-1 overflow-y-auto no-scrollbar w-full px-6 py-6 space-y-4">
           {isLoading && <div className="text-gray-400">Loading chat…</div>}
           {isError && (

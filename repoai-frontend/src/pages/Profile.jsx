@@ -70,7 +70,7 @@ export default function Profile() {
                   Clear All History?
                 </h3>
                 <p className="text-sm mb-1" style={{ color: "#FFFFFF" }}>
-                  This will permanently delete all {historyCount} refactoring sessions.
+                  This will permanently delete all refactoring sessions.
                 </p>
                 <p className="text-sm" style={{ color: "#FFFFFF" }}>
                   This action cannot be undone.
@@ -79,7 +79,7 @@ export default function Profile() {
 
               <button
                 onClick={() => setShowClearConfirm(true)}
-                className="text-[#FFFFFF] bg-[#343A40] p-2 rounded-[8px] font-medium transition-colors whitespace-nowrap"
+                className="text-[#FFFFFF] bg-[#343A40] px-3 py-2 rounded-[8px] font-medium transition-colors whitespace-nowrap"
               >
                 Clear History
               </button>

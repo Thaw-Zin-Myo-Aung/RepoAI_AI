@@ -171,13 +171,13 @@ export default function RepoSelector() {
                 <button
                   key={filter}
                   onClick={() => setActiveFilter(filter)}
-                  className={`px-6 py-2 rounded-lg font-medium bg-[#212121] transition ${activeFilter === filter
-                      ? "bg-[#FFFFFF] text-[#121212] "
-                      : "bg-zinc-900 text-[#FFFFFF] hover:bg-zinc-800"
-                    }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full border-2 border-white font-medium bg-transparent text-white transition 
+    ${activeFilter === filter ? "border-4" : "opacity-80 hover:opacity-100"}
+  `}
                 >
                   {filter}
                 </button>
+
               ))}
               {/* sync button removed — repos sync now runs automatically on page mount */}
             </div>
@@ -212,12 +212,14 @@ export default function RepoSelector() {
                       </td>
 
                       <td className="p-4">
+
                         <button
                           onClick={() => handleSelectRepo(repo)}
-                          className="text-[#FFFFFF] font-medium"
+                          className="px-4 py-2 bg-[#FFFFFF] text-[#121212] rounded-lg font-semibold shadow hover:bg-gray-100 transition"
                         >
                           Refactor
                         </button>
+
                       </td>
                     </tr>
                   ))}
@@ -305,12 +307,13 @@ export default function RepoSelector() {
                 onClick={handleStartRefactoring}
                 disabled={!selectedBranch || creatingConversation}
                 className={`px-8 py-3 rounded-lg font-medium transition ${selectedBranch && !creatingConversation
-                    ? "bg-white hover:bg-gray-100 text-black"
+                    ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                     : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
                   }`}
               >
                 {creatingConversation ? 'Creating...' : 'Start Refactoring'}
               </button>
+
             </div>
           </>
         )}

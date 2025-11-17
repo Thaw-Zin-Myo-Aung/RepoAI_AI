@@ -69,7 +69,7 @@ const repoData = {
 
         {/* Progress Section */}
         <div className="max-w-2xl mx-auto mb-4 flex items-center gap-4">
-          <div className="flex-1 bg-[#222222] rounded-full h-[15px] overflow-hidden my-[5px]">
+          <div className="flex-1 bg-[#222222] rounded-full h-[12px] overflow-hidden my-[5px]">
             <div
               className="h-full rounded-full transition-all duration-200 ease-linear bg-[#FFFFFF] shadow-[0_0_10px_#FFFFFF]"
               style={{ width: `${progress}%` }}
