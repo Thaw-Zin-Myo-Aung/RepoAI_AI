@@ -17,4 +17,22 @@ AI-powered code refactoring tool that helps developers analyze and improve their
 - *AI Module:* [https://github.com/Thaw-Zin-Myo-Aung/RepoAI_AI.git](https://github.com/Thaw-Zin-Myo-Aung/RepoAI_AI.git)
 
 *
+## 
+￼
+ What is RepoAI?
+
+RepoAI connects to your GitHub repositories and helps you refactor code through chat. Ask questions about your code, request improvements, and automatically push changes to new branches.
+
+## 
+￼
+ Features
+
+- *GitHub Login:* Connect with your GitHub account
+- *Repository refactoring:* Select a repo and branch to refactor
+- *AI Chat:* Ask questions and request code refactoring
+- *Preview Changes:* Review all modifications before applying
+- *Auto Push:* Creates new branches with your changes
+- *Chat History:* View past refactoring sessions.
+
+*
 
