@@ -16,6 +16,39 @@ A modern React-based frontend application for AI-powered repository analysis and
 - *User Profile*: Manage user settings and preferences
 - *Responsive Design*: Mobile-friendly UI built with Tailwind CSS
 
+## Project Structure
+
+src/
+├── components/          # Reusable React components
+│   ├── ChatContent.jsx
+│   ├── ChatInput.jsx
+│   ├── ChatMessages.jsx
+│   ├── FileChangeViewer.jsx
+│   ├── ClearHistoryModal.jsx
+│   ├── PlanSummaryCard.jsx
+│   ├── PushSummaryCard.jsx
+│   ├── ValidationSummaryCard.jsx
+│   ├── TerminalConsole.jsx
+│   ├── RequireAuth.jsx
+│   └── Sidebar.jsx
+├── pages/               # Page components
+│   ├── ChatBox.jsx
+│   ├── ChatHistory.jsx
+│   ├── ChatHistoryDetail.jsx
+│   ├── Commit.jsx
+│   ├── Home.jsx
+│   ├── Login.jsx
+│   ├── Profile.jsx
+│   ├── Preview.jsx
+│   └── Loading.jsx
+├── libs/                # Core libraries and hooks
+│   ├── api/             # API utilities and endpoints
+│   ├── hooks/           # React Query hooks organized by feature
+│   ├── stores/          # Zustand stores for state management
+│   └── utils/           # Helper utilities
+├── styles/              # CSS stylesheets
+├── assets/              # Static assets
+└── App.jsx             # Main app component
 
 
 ## Installation
