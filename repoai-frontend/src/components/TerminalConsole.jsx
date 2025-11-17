@@ -8,8 +8,10 @@ function normalizeAnsi(line = "") {
 
 export default function TerminalConsole({
   lines = [],
-  widthClass = "w-full max-w-full",
-  heightClass = "h-64",
+  // Constrain width so it doesn't stretch excessively on large screens
+  widthClass = "w-full max-w-screen-lg mx-auto",
+  // Provide a consistent vertical footprint; responsive tweak for larger screens
+  heightClass = "h-[340px] md:h-[420px]",
 }) {
   const html = useMemo(() => {
     const au = new AnsiUp();
@@ -34,7 +36,7 @@ export default function TerminalConsole({
   return (
     <div
       ref={containerRef}
-      className={`${widthClass} ${heightClass} bg-[#0b0b0b] border border-[#222] rounded-lg p-3 overflow-x-auto overflow-y-auto`}
+      className={`${widthClass} ${heightClass} shrink-0 bg-[#0b0b0b] border border-[#222] rounded-lg p-3 overflow-x-auto overflow-y-auto shadow-inner`}
     >
       <pre
         className="m-0 text-xs leading-5 text-gray-200 font-mono whitespace-pre"
