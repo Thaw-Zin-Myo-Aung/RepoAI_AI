@@ -16,7 +16,10 @@ export function useCreateConversation(options = {}) {
     ...DEFAULT_OPTIONS,
     onSuccess: (data, vars, ctx) => {
       // invalidate conversations list so UI refreshes
-      qc.invalidateQueries({ queryKey: [ENDPOINTS.CONVERSATION.LIST] });
+      const listKey = typeof ENDPOINTS.CONVERSATION.LIST === 'function'
+        ? ENDPOINTS.CONVERSATION.LIST()
+        : ENDPOINTS.CONVERSATION.LIST;
+      qc.invalidateQueries({ queryKey: [listKey] });
       if (typeof baseOnSuccess === 'function') baseOnSuccess(data, vars, ctx);
     },
     ...options,
@@ -35,7 +38,10 @@ export function useUpdateConversation(options = {}) {
     ...DEFAULT_OPTIONS,
     onSuccess: (data, vars, ctx) => {
       // invalidate list and detail cache for the updated conversation
-      qc.invalidateQueries({ queryKey: [ENDPOINTS.CONVERSATION.LIST] });
+      const listKey = typeof ENDPOINTS.CONVERSATION.LIST === 'function'
+        ? ENDPOINTS.CONVERSATION.LIST()
+        : ENDPOINTS.CONVERSATION.LIST;
+      qc.invalidateQueries({ queryKey: [listKey] });
       qc.invalidateQueries({ queryKey: [ENDPOINTS.CONVERSATION.DETAIL(vars?.id)] });
       if (typeof baseOnSuccess === 'function') baseOnSuccess(data, vars, ctx);
     },
@@ -54,7 +60,10 @@ export function useDeleteConversation(options = {}) {
     },
     ...DEFAULT_OPTIONS,
     onSuccess: (data, vars, ctx) => {
-      qc.invalidateQueries({ queryKey: [ENDPOINTS.CONVERSATION.LIST] });
+      const listKey = typeof ENDPOINTS.CONVERSATION.LIST === 'function'
+        ? ENDPOINTS.CONVERSATION.LIST()
+        : ENDPOINTS.CONVERSATION.LIST;
+      qc.invalidateQueries({ queryKey: [listKey] });
       qc.invalidateQueries({ queryKey: [ENDPOINTS.CONVERSATION.DETAIL(vars?.id)] });
       if (typeof baseOnSuccess === 'function') baseOnSuccess(data, vars, ctx);
     },

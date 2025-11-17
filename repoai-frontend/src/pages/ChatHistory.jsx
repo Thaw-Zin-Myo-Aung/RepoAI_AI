@@ -27,10 +27,18 @@ const ChatHistory = () => {
   const { mutate: deleteConversation, isPending: isDeleting } =
     useDeleteConversation({
       onSettled: () => setPendingDeleteId(null),
+      onSuccess: () => {
+        // API returns 204; force full page refresh as requested
+        navigate(0);
+      },
     });
   const { mutate: updateConversation, isPending: isUpdating } =
     useUpdateConversation({
       onSettled: () => setPendingUpdateId(null),
+      onSuccess: () => {
+        // After successful update, refresh page to reflect changes
+        navigate(0);
+      },
     });
   console.log(conversations);
   // ✅ FIX: Added effect to detect state and clear sessions
