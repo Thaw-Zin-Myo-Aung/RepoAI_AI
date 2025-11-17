@@ -97,6 +97,8 @@ public class SecurityConfig {
             if (redirect == null || redirect.isBlank()) {
                 redirect = frontendUrl + "/home"; // fallback
             }
+            // Extend session inactivity timeout for this login (e.g., 2 days)
+            request.getSession().setMaxInactiveInterval(2 * 24 * 60 * 60); // seconds
             response.sendRedirect(redirect);
         };
         }
