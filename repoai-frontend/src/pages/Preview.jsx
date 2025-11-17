@@ -6,7 +6,7 @@ export default function RefactorPreviewModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-      <div className="bg-[#121212] rounded-xl w-full max-w-5xl border border-[#2b2b2b] shadow-lg">
+     <div className="bg-[#121212] rounded-xl w-full max-w-full border border-[#2b2b2b] shadow-lg">
         {/* Header */}
         <div className="border-b border-[#2b2b2b] p-5">
           <h2 className="text-2xl font-semibold text-white">

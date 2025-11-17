@@ -56,8 +56,6 @@ const repoData = {
         {/* Title */}
         <h1 className="text-4xl font-bold mb-4">
           Analyzing your repository: <br /> 
-          <h2>{repoData.repoName}</h2> 
-          <h3>({repoData.branch})</h3>
         </h1>
 
         {/* Status Message */}
