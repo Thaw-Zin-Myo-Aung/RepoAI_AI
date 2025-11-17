@@ -171,12 +171,15 @@ export default function RepoSelector() {
                 <button
                   key={filter}
                   onClick={() => setActiveFilter(filter)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full border-2 border-white font-medium bg-transparent text-white transition 
-    ${activeFilter === filter ? "border-4" : "opacity-80 hover:opacity-100"}
-  `}
+                  className={`px-6 py-2 rounded-[8px] font-medium transition
+    ${activeFilter === filter
+                      ? "border-2 border-white text-white bg-transparent"
+                      : "text-white bg-transparent"
+                    }`}
                 >
                   {filter}
                 </button>
+
 
               ))}
               {/* sync button removed — repos sync now runs automatically on page mount */}
@@ -307,9 +310,10 @@ export default function RepoSelector() {
                 onClick={handleStartRefactoring}
                 disabled={!selectedBranch || creatingConversation}
                 className={`px-8 py-3 rounded-lg font-medium transition ${selectedBranch && !creatingConversation
-                    ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
-                    : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                  ? "bg-white hover:bg-gray-100 text-black cursor-pointer"
+                  : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
                   }`}
+
               >
                 {creatingConversation ? 'Creating...' : 'Start Refactoring'}
               </button>
