@@ -43,14 +43,14 @@ export function useUpdateConversation(options = {}) {
   });
 }
 
-/** Delete a conversation. Call mutate with { id } */
+/** Delete a conversation. Call mutate with { id, githubId? } */
 export function useDeleteConversation(options = {}) {
   const qc = useQueryClient();
   const baseOnSuccess = options.onSuccess;
   return useMutation({
-    mutationFn: ({ id } = {}) => {
+    mutationFn: ({ id, githubId } = {}) => {
       if (!id) throw new Error('id is required to delete conversation');
-      return api.delete(ENDPOINTS.CONVERSATION.DELETE(id));
+      return api.delete(ENDPOINTS.CONVERSATION.DELETE(id, githubId ?? ''));
     },
     ...DEFAULT_OPTIONS,
     onSuccess: (data, vars, ctx) => {

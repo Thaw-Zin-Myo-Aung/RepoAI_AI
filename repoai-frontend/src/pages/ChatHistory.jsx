@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from "react";
+import { Eye, Trash2, Pencil } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConversationsList } from "../libs/hooks/conversations/queries";
-import { useDeleteConversation, useUpdateConversation } from "../libs/hooks/conversations/mutation";
+import {
+  useDeleteConversation,
+  useUpdateConversation,
+} from "../libs/hooks/conversations/mutation";
+import { useUser } from "../libs/stores/useUser";
 
 const ChatHistory = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const [pendingUpdateId, setPendingUpdateId] = useState(null);
+  const { user } = useUser();
+  const githubId =
+    user?.githubId || user?.id || user?.github_id || user?.node_id || "";
 
   // Fetch conversations from the API
   const {
@@ -16,12 +24,14 @@ const ChatHistory = () => {
     isError,
     error,
   } = useConversationsList();
-  const { mutate: deleteConversation, isPending: isDeleting } = useDeleteConversation({
-    onSettled: () => setPendingDeleteId(null),
-  });
-  const { mutate: updateConversation, isPending: isUpdating } = useUpdateConversation({
-    onSettled: () => setPendingUpdateId(null),
-  });
+  const { mutate: deleteConversation, isPending: isDeleting } =
+    useDeleteConversation({
+      onSettled: () => setPendingDeleteId(null),
+    });
+  const { mutate: updateConversation, isPending: isUpdating } =
+    useUpdateConversation({
+      onSettled: () => setPendingUpdateId(null),
+    });
   console.log(conversations);
   // ✅ FIX: Added effect to detect state and clear sessions
   useEffect(() => {
@@ -82,37 +92,85 @@ const ChatHistory = () => {
                     </div>
                     <div className="col-span-4 text-white font-semibold flex justify-center">
                       <button
+                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+                        title="View conversation"
+                        aria-label="View conversation"
                         onClick={() => {
                           navigate(`/chat-history/${session.id}`);
                         }}
                       >
-                        View
+                        <Eye className="w-5 h-5" />
                       </button>
                       <button
                         type="button"
-                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60"
+                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60 hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded"
+                        title={
+                          isDeleting && pendingDeleteId === session.id
+                            ? "Deleting conversation..."
+                            : "Delete conversation"
+                        }
+                        aria-label={
+                          isDeleting && pendingDeleteId === session.id
+                            ? "Deleting conversation"
+                            : "Delete conversation"
+                        }
                         disabled={isDeleting && pendingDeleteId === session.id}
                         onClick={() => {
+                          if (!githubId) {
+                            alert(
+                              "Missing GitHub user id; cannot authorize delete. Please re-login."
+                            );
+                            return;
+                          }
                           if (confirm(`Delete conversation \"${session.title}\"?`)) {
                             setPendingDeleteId(session.id);
-                            deleteConversation({ id: session.id });
+                            deleteConversation({ id: session.id, githubId });
                           }
                         }}
                       >
-                        {isDeleting && pendingDeleteId === session.id ? "Deleting…" : "Delete"}
+                        {isDeleting && pendingDeleteId === session.id ? (
+                          <span className="text-xs tracking-wide animate-pulse">…</span>
+                        ) : (
+                          <Trash2 className="w-5 h-5" />
+                        )}
                       </button>
                       <button
                         type="button"
-                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60"
+                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60 hover:text-green-400 focus:outline-none focus:ring-2 focus:ring-green-500 rounded"
+                        title={
+                          isUpdating && pendingUpdateId === session.id
+                            ? "Renaming conversation..."
+                            : "Rename conversation"
+                        }
+                        aria-label={
+                          isUpdating && pendingUpdateId === session.id
+                            ? "Renaming conversation"
+                            : "Rename conversation"
+                        }
                         disabled={isUpdating && pendingUpdateId === session.id}
                         onClick={() => {
-                          const newTitle = prompt("Rename conversation", session.title);
-                          if (!newTitle || newTitle.trim() === "" || newTitle === session.title) return;
+                          const newTitle = prompt(
+                            "Rename conversation",
+                            session.title
+                          );
+                          if (
+                            !newTitle ||
+                            newTitle.trim() === "" ||
+                            newTitle === session.title
+                          )
+                            return;
                           setPendingUpdateId(session.id);
-                          updateConversation({ id: session.id, body: { title: newTitle.trim() } });
+                          updateConversation({
+                            id: session.id,
+                            body: { title: newTitle.trim() },
+                          });
                         }}
                       >
-                        {isUpdating && pendingUpdateId === session.id ? "Updating…" : "Rename"}
+                        {isUpdating && pendingUpdateId === session.id ? (
+                          <span className="text-xs tracking-wide animate-pulse">…</span>
+                        ) : (
+                          <Pencil className="w-5 h-5" />
+                        )}
                       </button>
                     </div>
                   </div>

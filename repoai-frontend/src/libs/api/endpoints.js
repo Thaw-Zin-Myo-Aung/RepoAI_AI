@@ -29,7 +29,8 @@ export const ENDPOINTS = Object.freeze({
   },
   CONVERSATION: {
     UPDATE: (id) => `api/conversations/${id}`,
-    DELETE: (id) => `api/conversations/${id}?githubId=''`,
+    // Pass githubId when available; backend may authorize delete based on user identity
+    DELETE: (id, githubId = '') => `api/conversations/${id}?githubId=${githubId}`,
     CREATE: "api/conversations",
     LIST: () => `api/conversations`,
     DETAIL: (id) => `api/conversations/${id}/chats`,
