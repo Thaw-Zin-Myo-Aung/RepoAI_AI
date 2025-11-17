@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConversationsList } from "../libs/hooks/conversations/queries";
-import { useDeleteConversation } from "../libs/hooks/conversations/mutation";
+import { useDeleteConversation, useUpdateConversation } from "../libs/hooks/conversations/mutation";
 
 const ChatHistory = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [pendingDeleteId, setPendingDeleteId] = useState(null);
+  const [pendingUpdateId, setPendingUpdateId] = useState(null);
 
   // Fetch conversations from the API
   const {
@@ -15,10 +16,12 @@ const ChatHistory = () => {
     isError,
     error,
   } = useConversationsList();
-  const { mutate: deleteConversation, isPending: isDeleting } =
-    useDeleteConversation({
-      onSettled: () => setPendingDeleteId(null),
-    });
+  const { mutate: deleteConversation, isPending: isDeleting } = useDeleteConversation({
+    onSettled: () => setPendingDeleteId(null),
+  });
+  const { mutate: updateConversation, isPending: isUpdating } = useUpdateConversation({
+    onSettled: () => setPendingUpdateId(null),
+  });
   console.log(conversations);
   // ✅ FIX: Added effect to detect state and clear sessions
   useEffect(() => {
@@ -87,20 +90,29 @@ const ChatHistory = () => {
                       </button>
                       <button
                         type="button"
-                        className="col-span-4 text-white font-semibold flex justify-center disabled:opacity-60"
+                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60"
                         disabled={isDeleting && pendingDeleteId === session.id}
                         onClick={() => {
-                          if (
-                            confirm(`Delete conversation "${session.title}"?`)
-                          ) {
+                          if (confirm(`Delete conversation \"${session.title}\"?`)) {
                             setPendingDeleteId(session.id);
                             deleteConversation({ id: session.id });
                           }
                         }}
                       >
-                        {isDeleting && pendingDeleteId === session.id
-                          ? "Deleting…"
-                          : "Delete"}
+                        {isDeleting && pendingDeleteId === session.id ? "Deleting…" : "Delete"}
+                      </button>
+                      <button
+                        type="button"
+                        className="mx-2 text-white font-semibold flex justify-center disabled:opacity-60"
+                        disabled={isUpdating && pendingUpdateId === session.id}
+                        onClick={() => {
+                          const newTitle = prompt("Rename conversation", session.title);
+                          if (!newTitle || newTitle.trim() === "" || newTitle === session.title) return;
+                          setPendingUpdateId(session.id);
+                          updateConversation({ id: session.id, body: { title: newTitle.trim() } });
+                        }}
+                      >
+                        {isUpdating && pendingUpdateId === session.id ? "Updating…" : "Rename"}
                       </button>
                     </div>
                   </div>
