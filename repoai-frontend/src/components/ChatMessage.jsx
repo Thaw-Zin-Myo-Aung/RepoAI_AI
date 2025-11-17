@@ -164,7 +164,7 @@ export function ChatMessage({ message, sender, kind, meta, items }) {
 
           {/* Render terminal output line if raw_line present */}
           {!items?.length && meta?.data?.raw_line && (
-            <div className="mt-2">
+            <div className="mt-2 max-w-[80%]">
               <TerminalConsole lines={[meta.data.raw_line]} />
             </div>
           )}
