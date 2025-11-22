@@ -12,7 +12,7 @@ AI-powered code refactoring tool that helps developers analyze and improve their
 ￼
  Repository Links
 
-- *Frontend:* [https://github.com/Thuraung-hub/Repo-AI-Frontend.git](https://repoai-frontend-516479753863.us-central1.run.app)
+- *Frontend:* [https://github.com/Thuraung-hub/Repo-AI-Frontend.git](https://github.com/Thuraung-hub/Repo-AI-Frontend)
 - *Backend:* [https://github.com/Khant-Wai-Lin/repo-ai-backend.git](https://github.com/Khant-Wai-Lin/repo-ai-backend.git)
 - *AI Module:* [https://github.com/Thaw-Zin-Myo-Aung/RepoAI_AI.git](https://github.com/Thaw-Zin-Myo-Aung/RepoAI_AI.git)
 
